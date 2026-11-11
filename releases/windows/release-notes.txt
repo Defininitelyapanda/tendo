@@ -1,0 +1,10 @@
+TENDO Windows Prototype 1.0.0
+Release date: 2026-11-10
+Architecture: Windows x64
+Runtime: Electron 45.2.3
+
+This is a packaged prototype client, not a production TENDO service. It shows fictional in-memory sample records and has no sign-in, live backend connection, or persistent business data. Do not enter genuine business or payment information.
+
+The installer creates Start Menu and desktop shortcuts and supports uninstall. The installer is not code-signed; Windows may display an unknown-publisher warning.
+
+Install, launch, shortcut creation, and uninstall were tested on this Windows x64 build host.

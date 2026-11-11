@@ -1,0 +1,9 @@
+TENDO Android Prototype 1.0.0
+Release date: 2026-11-10
+Package: com.tendo.app
+Minimum Android version: Android 8.0 (API 26)
+Target Android version: Android 14 (API 34)
+
+This is a debug-signed prototype APK for local evaluation, not a production or app-store release. It bundles the prototype frontend and displays fictional in-memory sample records. It has no sign-in or live backend connection. Do not enter genuine business or payment information.
+
+The APK signature and bundled frontend assets were verified. No online Android device was available for installation testing.

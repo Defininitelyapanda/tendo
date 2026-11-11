@@ -1,0 +1,57 @@
+{
+  "name": "tendo-desktop",
+  "version": "1.0.0",
+  "description": "TENDO desktop client",
+  "author": "TENDO",
+  "main": "index.js",
+  "scripts": {
+    "start": "electron .",
+    "dist": "electron-builder --win nsis",
+    "dist:portable": "electron-builder --win portable"
+  },
+  "devDependencies": {
+    "electron": "^45.2.3",
+    "electron-builder": "^26.18.0"
+  },
+  "build": {
+    "appId": "com.tendo.desktop",
+    "productName": "TENDO Prototype",
+    "directories": {
+      "output": "dist"
+    },
+    "files": [
+      "index.js",
+      "package.json"
+    ],
+    "extraResources": [
+      {
+        "from": "../index.html",
+        "to": "web/index.html"
+      },
+      {
+        "from": "../styles.css",
+        "to": "web/styles.css"
+      },
+      {
+        "from": "../app.js",
+        "to": "web/app.js"
+      }
+    ],
+    "win": {
+      "target": "nsis",
+      "icon": "assets/tendo.ico",
+      "signExecutable": false,
+      "artifactName": "TENDO-Windows-Prototype-Setup-${version}.${ext}"
+    },
+    "nsis": {
+      "oneClick": false,
+      "allowToChangeInstallationDirectory": true,
+      "installerIcon": "assets/tendo.ico",
+      "uninstallerIcon": "assets/tendo.ico",
+      "createDesktopShortcut": true,
+      "createStartMenuShortcut": true,
+      "shortcutName": "TENDO Prototype",
+      "deleteAppDataOnUninstall": false
+    }
+  }
+}

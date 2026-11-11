@@ -1,0 +1,78 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <meta name="theme-color" content="#17253b">
+  <meta name="description" content="TENDO business operations prototype">
+  <title>TENDO — Business, in order.</title>
+  <link rel="stylesheet" href="styles.css">
+</head>
+<body>
+  <svg class="icon-library" xmlns="http://www.w3.org/2000/svg" aria-hidden="true">
+    <symbol id="i-grid" viewBox="0 0 24 24"><rect x="3" y="3" width="7" height="7" rx="1.5"/><rect x="14" y="3" width="7" height="7" rx="1.5"/><rect x="3" y="14" width="7" height="7" rx="1.5"/><rect x="14" y="14" width="7" height="7" rx="1.5"/></symbol>
+    <symbol id="i-file" viewBox="0 0 24 24"><path d="M13 3H6a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V10z"/><path d="M13 3v7h7M8 14h8M8 18h6"/></symbol>
+    <symbol id="i-receipt" viewBox="0 0 24 24"><path d="M4 3v18l4-2 4 2 4-2 4 2V3l-4 2-4-2-4 2z"/><path d="M8 9h8M8 13h8"/></symbol>
+    <symbol id="i-users" viewBox="0 0 24 24"><path d="M16 21v-2a4 4 0 0 0-4-4H8a4 4 0 0 0-4 4v2"/><circle cx="10" cy="7" r="4"/><path d="M20 21v-2a4 4 0 0 0-3-3.87M16 3.13a4 4 0 0 1 0 7.75"/></symbol>
+    <symbol id="i-box" viewBox="0 0 24 24"><path d="m12 3 9 5-9 5-9-5z"/><path d="M3 8v9l9 5 9-5V8M12 13v9"/></symbol>
+    <symbol id="i-chart" viewBox="0 0 24 24"><path d="M3 3v18h18"/><path d="m19 9-5 5-4-4-5 5"/></symbol>
+    <symbol id="i-calculator" viewBox="0 0 24 24"><rect x="5" y="3" width="14" height="18" rx="2"/><path d="M8 7h8M8 12h2m4 0h2M8 16h2m4 0h2"/></symbol>
+    <symbol id="i-settings" viewBox="0 0 24 24"><circle cx="12" cy="12" r="3"/><path d="m19.4 15 .1.1 1.4 1.1-1.4 2.4-1.7-.7a8 8 0 0 1-1.7 1l-.3 1.8h-2.8l-.3-1.8a8 8 0 0 1-1.7-1l-1.7.7-1.4-2.4L7.3 15a8 8 0 0 1 0-2l-1.4-1.1 1.4-2.4 1.7.7a8 8 0 0 1 1.7-1L11 7.4h2.8l.3 1.8a8 8 0 0 1 1.7 1l1.7-.7 1.4 2.4-1.4 1.1a8 8 0 0 1-.1 2z"/></symbol>
+    <symbol id="i-plus" viewBox="0 0 24 24"><path d="M12 5v14M5 12h14"/></symbol>
+    <symbol id="i-search" viewBox="0 0 24 24"><circle cx="11" cy="11" r="7"/><path d="m20 20-4-4"/></symbol>
+    <symbol id="i-arrow-up-right" viewBox="0 0 24 24"><path d="M7 17 17 7M7 7h10v10"/></symbol>
+    <symbol id="i-more" viewBox="0 0 24 24"><circle cx="5" cy="12" r="1"/><circle cx="12" cy="12" r="1"/><circle cx="19" cy="12" r="1"/></symbol>
+    <symbol id="i-menu" viewBox="0 0 24 24"><path d="M4 6h16M4 12h16M4 18h16"/></symbol>
+    <symbol id="i-close" viewBox="0 0 24 24"><path d="m18 6-12 12M6 6l12 12"/></symbol>
+    <symbol id="i-calendar" viewBox="0 0 24 24"><rect x="3" y="5" width="18" height="16" rx="2"/><path d="M16 3v4M8 3v4M3 11h18"/></symbol>
+    <symbol id="i-download" viewBox="0 0 24 24"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4M7 10l5 5 5-5M12 15V3"/></symbol>
+    <symbol id="i-spark" viewBox="0 0 24 24"><path d="m12 3 1.8 5.2L19 10l-5.2 1.8L12 17l-1.8-5.2L5 10l5.2-1.8zM19 15l.8 2.2L22 18l-2.2.8L19 21l-.8-2.2L16 18l2.2-.8z"/></symbol>
+    <symbol id="i-check" viewBox="0 0 24 24"><path d="m5 12 4 4L19 6"/></symbol>
+    <symbol id="i-clock" viewBox="0 0 24 24"><circle cx="12" cy="12" r="9"/><path d="M12 7v5l3 2"/></symbol>
+    <symbol id="i-print" viewBox="0 0 24 24"><path d="M6 9V3h12v6M6 18H4a2 2 0 0 1-2-2v-5a2 2 0 0 1 2-2h16a2 2 0 0 1 2 2v5a2 2 0 0 1-2 2h-2"/><path d="M6 14h12v7H6z"/></symbol>
+    <symbol id="i-share" viewBox="0 0 24 24"><circle cx="18" cy="5" r="3"/><circle cx="6" cy="12" r="3"/><circle cx="18" cy="19" r="3"/><path d="m8.7 10.7 6.6-4.4m-6.6 7 6.6 4"/></symbol>
+  </svg>
+  <div class="app-shell">
+    <aside class="sidebar" id="sidebar">
+      <a class="brand" href="#" data-nav="overview" aria-label="TENDO overview"><span class="brand-mark">t</span><span class="brand-name">TENDO<span class="brand-period">.</span></span></a>
+      <div class="workspace-switcher" id="workspace-switcher" aria-label="Switch workspace" tabindex="0"><span class="workspace-avatar">K</span><span class="workspace-copy"><strong id="workspace-name">Kijani Studio</strong><small>Business workspace</small></span><span class="chevron">⌄</span></div>
+      <div class="workspace-menu hidden" id="workspace-menu" aria-label="Workspace list"></div>
+      <div class="nav-caption">WORKSPACE</div>
+      <nav class="main-nav" aria-label="Main navigation">
+        <button class="nav-link active" data-nav="overview"><svg><use href="#i-grid"/></svg><span>Overview</span></button>
+        <button class="nav-link" data-nav="invoices"><svg><use href="#i-file"/></svg><span>Invoices</span><span class="nav-count" id="invoice-nav-count">0</span></button>
+        <button class="nav-link" data-nav="expenses"><svg><use href="#i-receipt"/></svg><span>Expenses</span></button>
+        <button class="nav-link" data-nav="customers"><svg><use href="#i-users"/></svg><span>Customers</span></button>
+        <button class="nav-link" data-nav="inventory"><svg><use href="#i-box"/></svg><span>Inventory</span></button>
+      </nav>
+      <div class="nav-caption nav-caption-spaced">INSIGHTS</div>
+      <nav class="main-nav" aria-label="Insights navigation">
+        <button class="nav-link" data-nav="reports"><svg><use href="#i-chart"/></svg><span>Reports</span></button>
+        <button class="nav-link" data-nav="tax"><svg><use href="#i-calculator"/></svg><span>Tax calculator</span></button>
+      </nav>
+      <div class="sidebar-bottom">
+        <div class="sidebar-tip"><span class="tip-icon"><svg><use href="#i-spark"/></svg></span><strong>Good business, in order.</strong><p>Your workspace keeps the important things together.</p></div>
+        <button class="nav-link" data-nav="settings"><svg><use href="#i-settings"/></svg><span>Settings</span></button>
+        <div class="profile-row"><span class="profile-avatar">TK</span><span class="profile-copy"><strong>Tonnie K.</strong><small>Workspace owner</small></span><button class="icon-button profile-menu" aria-label="Profile options"><svg><use href="#i-more"/></svg></button></div>
+      </div>
+    </aside>
+    <div class="mobile-backdrop" id="mobile-backdrop"></div>
+    <main class="main-area">
+      <header class="topbar">
+        <button class="icon-button mobile-menu" id="mobile-menu" aria-label="Open navigation"><svg><use href="#i-menu"/></svg></button>
+        <div class="topbar-context"><span class="breadcrumb">Kijani Studio</span><span class="breadcrumb-divider">/</span><span id="topbar-section">Overview</span></div>
+        <div class="topbar-actions"><label class="global-search"><svg><use href="#i-search"/></svg><input id="search-input" type="search" placeholder="Search this workspace" aria-label="Search current workspace"><kbd>⌘ K</kbd></label><span class="prototype-pill"><span></span> Prototype</span><button class="avatar-button" aria-label="Account">TK</button></div>
+      </header>
+      <div class="prototype-notice"><span class="notice-dot"></span><strong>Prototype mode</strong><span>Sample data only · changes reset on refresh</span></div>
+      <section class="page-heading"><div><p class="eyebrow" id="page-eyebrow">YOUR BUSINESS, AT A GLANCE</p><h1 id="page-title">Overview</h1><p class="page-subtitle" id="page-subtitle">A clear view of the work moving your business forward.</p></div><div class="heading-actions"><span class="date-chip" id="today-chip"></span><button class="button button-primary" id="new-record"><svg><use href="#i-plus"/></svg><span>New invoice</span></button></div></section>
+      <section id="page-content" class="page-content"></section>
+      <footer class="app-footer"><span>Business, in order.</span><span>Tax calculations are estimates. No KRA or eTIMS connection.</span></footer>
+    </main>
+  </div>
+  <dialog class="record-dialog" id="record-dialog" aria-labelledby="dialog-title"><div id="dialog-content"></div></dialog>
+  <dialog class="record-dialog setup-dialog" id="setup-dialog" aria-labelledby="setup-title"><div id="setup-content"></div></dialog>
+  <div class="toast-region" id="toast-region" role="status" aria-live="polite"></div>
+  <div id="print-root" aria-hidden="true"></div>
+  <script src="app.js"></script>
+</body>
+</html>
