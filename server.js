@@ -39,6 +39,12 @@ const startServer = portIndex => {
     const url = new URL(req.url, `http://${req.headers.host || 'localhost'}`);
     let requestPath = decodeURIComponent(url.pathname);
 
+    if (requestPath === '/.env' || requestPath.startsWith('/.env/') || requestPath.includes('/.git/') || requestPath.includes('/backend/') || requestPath.includes('/scripts/') || requestPath.includes('/desktop/') || requestPath.includes('/android-app/')) {
+      res.writeHead(403, { 'Content-Type': 'text/plain; charset=utf-8' });
+      res.end('Forbidden');
+      return;
+    }
+
     if (requestPath === '/') {
       requestPath = '/index.html';
     }

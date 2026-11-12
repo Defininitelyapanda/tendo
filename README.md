@@ -15,10 +15,18 @@ A responsive browser prototype for exploring the TENDO business operations exper
 - Health check: `http://localhost:3100/health`
 - If 3100 is occupied, the backend automatically retries the next free port and logs the actual listening URL
 
+## Run the full local stack
+
+- Start both the UI and API together: `npm run dev`
+- The command launches the static prototype and the backend concurrently so the app can load live workspace data immediately
+
 ## Quick validation
 
 - Frontend syntax check: `npm run check`
 - Backend syntax check: `npm run backend:check`
+- Full project build verification: `npm run build`
+- Desktop shell: `npm run desktop`
+- Desktop Windows installer build: `npm run desktop:build`
 
 ## Environment and data safety
 
@@ -32,11 +40,29 @@ The backend now separates database files by environment:
 
 Each record also carries a `data_classification` label (`demo`, `staging`, or `production`) to distinguish demonstration records from genuine business records. The `/health` endpoint reports the active environment and classification so the app does not silently operate against the wrong data set.
 
-## Prototype boundary
+## Productionization status
 
-This project includes a browser-only prototype and a minimal backend scaffold for workspace-aware operations. It is not a production SaaS deployment. The prototype uses browser memory for sample data and resets on refresh. The backend is intentionally minimal and uses a local SQLite database to support secure workspace isolation and basic record flows without adding unnecessary infrastructure.
+TENDO now contains a working local SaaS scaffold with a browser frontend, authenticated workspace API, SQLite persistence, and production-safety controls. The backend supports workspace-scoped auth, customer, invoice, payment, expense, inventory, and reporting data, while the UI can sign in, sync live data, and persist session state locally for convenience.
+
+The application is still intentionally lightweight and designed for local verification and staging use rather than a full public multi-tenant SaaS deployment. It keeps the current architecture simple: one backend, one primary local database per environment, modular business logic, and secure workspace isolation.
 
 The interface demonstrates invoice and expense workflows, customer synchronization, optional inventory, summary reports, CSV downloads, browser printing/sharing, and Kenyan tax estimates. Tax calculations are informational only; there is no KRA or eTIMS integration.
+
+## Workspace API capabilities
+
+The backend exposes authenticated workspace operations for:
+
+- registration and login
+- workspace listing and updates
+- customer create, read, update, delete
+- invoice create, read, update, delete
+- payment capture against invoices
+- expense create, read, update, delete
+- inventory create, read, update, delete
+- dashboard and summary analytics
+- audit logging for workspace actions
+
+The app also includes a staged database backup script and environment-based DB separation for development, staging, and production.
 
 ## Desktop prototype installer
 

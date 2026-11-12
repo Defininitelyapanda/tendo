@@ -26,6 +26,17 @@ app.use((req, res, next) => {
   return next();
 });
 
+app.use((req, res, next) => {
+  const pathname = decodeURIComponent(req.path || '/');
+  const restrictedPatterns = ['/.env', '/.git', '/backend', '/scripts', '/desktop', '/android-app'];
+
+  if (pathname === '/.env' || pathname.startsWith('/.env') || restrictedPatterns.some(pattern => pathname === pattern || pathname.startsWith(pattern + '/'))) {
+    return res.status(403).json({ error: 'Forbidden.' });
+  }
+
+  return next();
+});
+
 app.use(express.static(clientRoot));
 app.use(express.json({ limit: '1mb' }));
 
@@ -49,6 +60,18 @@ function normalizePhone(phone = '') {
   return String(phone || '').replace(/\D/g, '').slice(-15);
 }
 
+function generateInvoiceNumber(workspaceId) {
+  const timePart = Date.now().toString(36).toUpperCase();
+  const randomPart = crypto.randomBytes(3).toString('hex').toUpperCase();
+  const base = `INV-${timePart}-${randomPart}`;
+
+  while (db.prepare('SELECT 1 FROM invoices WHERE workspace_id = ? AND number = ?').get(workspaceId, base)) {
+    return generateInvoiceNumber(workspaceId);
+  }
+
+  return base;
+}
+
 function requireWorkspace(req, res, next) {
   const workspaceId = req.params.workspaceId || req.body.workspace_id || req.query.workspaceId;
   if (!workspaceId) {
@@ -70,6 +93,48 @@ function createAuditLog(workspaceId, userId, action, entity, entityId, details =
     entityId,
     JSON.stringify(details)
   );
+}
+
+function defaultWorkspacePermissions() {
+  return {
+    invoices: 'view',
+    expenses: 'view',
+    customers: 'view',
+    inventory: 'view',
+    reports: 'view',
+    settings: 'none',
+  };
+}
+
+function parsePermissions(permissions) {
+  let parsed = permissions;
+  if (typeof parsed === 'string') {
+    try {
+      parsed = JSON.parse(parsed);
+    } catch (error) {
+      parsed = {};
+    }
+  }
+  if (!parsed || typeof parsed !== 'object' || Array.isArray(parsed)) {
+    return defaultWorkspacePermissions();
+  }
+
+  return {
+    ...defaultWorkspacePermissions(),
+    ...parsed,
+  };
+}
+
+function toMemberRecord(row) {
+  return {
+    id: row.user_id,
+    user_id: row.user_id,
+    name: row.name,
+    email: row.email,
+    role: row.role,
+    permissions: parsePermissions(row.permissions),
+    created_at: row.created_at,
+  };
 }
 
 function upsertCustomer(workspaceId, payload) {
@@ -223,9 +288,178 @@ app.post('/api/workspaces', requireAuth, (req, res) => {
   }
 });
 
+app.get('/api/workspaces/:workspaceId', requireAuth, requireWorkspace, (req, res) => {
+  const workspace = db.prepare('SELECT * FROM workspaces WHERE id = ?').get(req.params.workspaceId);
+  if (!workspace) {
+    return res.status(404).json({ error: 'Workspace not found.' });
+  }
+  return res.json({ workspace });
+});
+
+app.get('/api/workspaces/:workspaceId/members', requireAuth, requireWorkspace, (req, res) => {
+  const rows = db.prepare(`
+    SELECT wm.user_id, wm.role, wm.permissions, wm.created_at, u.name, u.email
+    FROM workspace_members wm
+    INNER JOIN users u ON u.id = wm.user_id
+    WHERE wm.workspace_id = ?
+    ORDER BY wm.created_at DESC
+  `).all(req.params.workspaceId);
+
+  return res.json({ members: rows.map(toMemberRecord) });
+});
+
+app.post('/api/workspaces/:workspaceId/members', requireAuth, requireWorkspace, requireWorkspaceAdmin, (req, res) => {
+  try {
+    const { email, name, role, permissions } = req.body || {};
+    if (!email || typeof email !== 'string') {
+      return res.status(400).json({ error: 'Member email is required.' });
+    }
+
+    const targetUser = db.prepare('SELECT * FROM users WHERE email = ?').get(email.toLowerCase());
+    if (!targetUser) {
+      return res.status(404).json({ error: 'User not found. Ask the person to register first or invite them via the app onboarding flow.' });
+    }
+
+    const existingMembership = db.prepare('SELECT 1 FROM workspace_members WHERE user_id = ? AND workspace_id = ?').get(targetUser.id, req.params.workspaceId);
+    if (existingMembership) {
+      return res.status(409).json({ error: 'User is already a member of this workspace.' });
+    }
+
+    const nextRole = role === 'admin' || role === 'owner' ? role : 'member';
+    const nextPermissions = JSON.stringify(parsePermissions(permissions));
+    db.prepare(`
+      INSERT INTO workspace_members (user_id, workspace_id, role, permissions)
+      VALUES (?, ?, ?, ?)
+    `).run(targetUser.id, req.params.workspaceId, nextRole, nextPermissions);
+
+    const member = db.prepare(`
+      SELECT wm.user_id, wm.role, wm.permissions, wm.created_at, u.name, u.email
+      FROM workspace_members wm
+      INNER JOIN users u ON u.id = wm.user_id
+      WHERE wm.user_id = ? AND wm.workspace_id = ?
+    `).get(targetUser.id, req.params.workspaceId);
+
+    createAuditLog(req.params.workspaceId, req.user.id, 'member_added', 'member', targetUser.id, { email: targetUser.email, role: nextRole });
+    return res.status(201).json({ member: toMemberRecord(member) });
+  } catch (error) {
+    return res.status(500).json({ error: 'Member creation failed.', details: error.message });
+  }
+});
+
+app.patch('/api/workspaces/:workspaceId/members/:memberId', requireAuth, requireWorkspace, requireWorkspaceAdmin, (req, res) => {
+  try {
+    const { role, permissions } = req.body || {};
+    const membership = db.prepare(`
+      SELECT wm.user_id, wm.role, wm.permissions, wm.created_at, u.name, u.email
+      FROM workspace_members wm
+      INNER JOIN users u ON u.id = wm.user_id
+      WHERE wm.user_id = ? AND wm.workspace_id = ?
+    `).get(req.params.memberId, req.params.workspaceId);
+
+    if (!membership) {
+      return res.status(404).json({ error: 'Workspace member not found.' });
+    }
+
+    const nextRole = role === 'owner' || role === 'admin' || role === 'member' ? role : membership.role;
+    const nextPermissions = JSON.stringify(parsePermissions(permissions || membership.permissions));
+    db.prepare(`
+      UPDATE workspace_members
+      SET role = ?, permissions = ?
+      WHERE user_id = ? AND workspace_id = ?
+    `).run(nextRole, nextPermissions, req.params.memberId, req.params.workspaceId);
+
+    const updated = db.prepare(`
+      SELECT wm.user_id, wm.role, wm.permissions, wm.created_at, u.name, u.email
+      FROM workspace_members wm
+      INNER JOIN users u ON u.id = wm.user_id
+      WHERE wm.user_id = ? AND wm.workspace_id = ?
+    `).get(req.params.memberId, req.params.workspaceId);
+
+    createAuditLog(req.params.workspaceId, req.user.id, 'member_updated', 'member', req.params.memberId, { role: nextRole, permissions: parsePermissions(nextPermissions) });
+    return res.json({ member: toMemberRecord(updated) });
+  } catch (error) {
+    return res.status(500).json({ error: 'Member update failed.', details: error.message });
+  }
+});
+
+app.delete('/api/workspaces/:workspaceId/members/:memberId', requireAuth, requireWorkspace, requireWorkspaceAdmin, (req, res) => {
+  const membership = db.prepare('SELECT * FROM workspace_members WHERE user_id = ? AND workspace_id = ?').get(req.params.memberId, req.params.workspaceId);
+  if (!membership) {
+    return res.status(404).json({ error: 'Workspace member not found.' });
+  }
+
+  if (req.params.memberId === req.user.id) {
+    return res.status(409).json({ error: 'You cannot remove yourself from the workspace while you are active.' });
+  }
+
+  db.prepare('DELETE FROM workspace_members WHERE user_id = ? AND workspace_id = ?').run(req.params.memberId, req.params.workspaceId);
+  createAuditLog(req.params.workspaceId, req.user.id, 'member_removed', 'member', req.params.memberId, { role: membership.role });
+  return res.json({ ok: true, deleted_member_id: req.params.memberId });
+});
+
+app.patch('/api/workspaces/:workspaceId', requireAuth, requireWorkspace, (req, res) => {
+  const { name, type, timezone } = req.body || {};
+  const workspace = db.prepare('SELECT * FROM workspaces WHERE id = ?').get(req.params.workspaceId);
+  if (!workspace) {
+    return res.status(404).json({ error: 'Workspace not found.' });
+  }
+
+  db.prepare(`
+    UPDATE workspaces
+    SET name = ?, type = ?, timezone = ?
+    WHERE id = ?
+  `).run(String(name || workspace.name), String(type || workspace.type || 'Business'), String(timezone || workspace.timezone || 'Africa/Nairobi'), req.params.workspaceId);
+
+  const updated = db.prepare('SELECT * FROM workspaces WHERE id = ?').get(req.params.workspaceId);
+  createAuditLog(req.params.workspaceId, req.user.id, 'workspace_updated', 'workspace', req.params.workspaceId, { name: updated.name });
+  return res.json({ workspace: updated });
+});
+
 app.get('/api/workspaces/:workspaceId/customers', requireAuth, requireWorkspace, (req, res) => {
   const customers = db.prepare('SELECT * FROM customers WHERE workspace_id = ? ORDER BY updated_at DESC').all(req.params.workspaceId);
   return res.json({ customers });
+});
+
+app.patch('/api/workspaces/:workspaceId/customers/:customerId', requireAuth, requireWorkspace, (req, res) => {
+  try {
+    const parsed = customerSchema.safeParse(req.body);
+    if (!parsed.success) {
+      return res.status(400).json({ error: 'Invalid customer payload', details: parsed.error.flatten() });
+    }
+
+    const customer = db.prepare('SELECT * FROM customers WHERE id = ? AND workspace_id = ?').get(req.params.customerId, req.params.workspaceId);
+    if (!customer) {
+      return res.status(404).json({ error: 'Customer not found.' });
+    }
+
+    const updated = db.prepare(`
+      UPDATE customers
+      SET name = ?, phone = ?, email = ?, notes = ?, updated_at = CURRENT_TIMESTAMP
+      WHERE id = ? AND workspace_id = ?
+    `).run(parsed.data.name.trim(), normalizePhone(parsed.data.phone || '') || null, (parsed.data.email || '').trim().toLowerCase() || null, parsed.data.notes || '', req.params.customerId, req.params.workspaceId);
+
+    const record = db.prepare('SELECT * FROM customers WHERE id = ?').get(req.params.customerId);
+    createAuditLog(req.params.workspaceId, req.user.id, 'customer_updated', 'customer', req.params.customerId, { name: record.name });
+    return res.json({ customer: record });
+  } catch (error) {
+    return res.status(500).json({ error: 'Customer update failed.', details: error.message });
+  }
+});
+
+app.delete('/api/workspaces/:workspaceId/customers/:customerId', requireAuth, requireWorkspace, (req, res) => {
+  const customer = db.prepare('SELECT * FROM customers WHERE id = ? AND workspace_id = ?').get(req.params.customerId, req.params.workspaceId);
+  if (!customer) {
+    return res.status(404).json({ error: 'Customer not found.' });
+  }
+
+  const hasLinkedInvoices = db.prepare('SELECT 1 FROM invoices WHERE customer_id = ? AND workspace_id = ? LIMIT 1').get(req.params.customerId, req.params.workspaceId);
+  if (hasLinkedInvoices) {
+    return res.status(409).json({ error: 'Customer cannot be deleted because it has linked invoices or payments.' });
+  }
+
+  db.prepare('DELETE FROM customers WHERE id = ? AND workspace_id = ?').run(req.params.customerId, req.params.workspaceId);
+  createAuditLog(req.params.workspaceId, req.user.id, 'customer_deleted', 'customer', req.params.customerId, { name: customer.name });
+  return res.json({ ok: true, deleted_customer_id: req.params.customerId });
 });
 
 app.post('/api/workspaces/:workspaceId/customers', requireAuth, requireWorkspace, (req, res) => {
@@ -245,6 +479,40 @@ app.post('/api/workspaces/:workspaceId/customers', requireAuth, requireWorkspace
 app.get('/api/workspaces/:workspaceId/entries', requireAuth, requireWorkspace, (req, res) => {
   const entries = db.prepare('SELECT * FROM entries WHERE workspace_id = ? ORDER BY created_at DESC').all(req.params.workspaceId);
   return res.json({ entries });
+});
+
+app.patch('/api/workspaces/:workspaceId/entries/:entryId', requireAuth, requireWorkspace, (req, res) => {
+  try {
+    const parsed = entrySchema.safeParse(req.body);
+    if (!parsed.success) {
+      return res.status(400).json({ error: 'Invalid entry payload', details: parsed.error.flatten() });
+    }
+    const existing = db.prepare('SELECT * FROM entries WHERE id = ? AND workspace_id = ?').get(req.params.entryId, req.params.workspaceId);
+    if (!existing) {
+      return res.status(404).json({ error: 'Entry not found.' });
+    }
+    const { type, description, amount_cents, customer_id, status } = parsed.data;
+    db.prepare(`
+      UPDATE entries
+      SET type = ?, description = ?, amount_cents = ?, customer_id = ?, status = ?
+      WHERE id = ? AND workspace_id = ?
+    `).run(type, description, amount_cents, customer_id || null, status, req.params.entryId, req.params.workspaceId);
+    const updated = db.prepare('SELECT * FROM entries WHERE id = ?').get(req.params.entryId);
+    createAuditLog(req.params.workspaceId, req.user.id, 'entry_updated', 'entry', req.params.entryId, { type, amount_cents });
+    return res.json({ entry: updated });
+  } catch (error) {
+    return res.status(500).json({ error: 'Entry update failed.', details: error.message });
+  }
+});
+
+app.delete('/api/workspaces/:workspaceId/entries/:entryId', requireAuth, requireWorkspace, (req, res) => {
+  const existing = db.prepare('SELECT * FROM entries WHERE id = ? AND workspace_id = ?').get(req.params.entryId, req.params.workspaceId);
+  if (!existing) {
+    return res.status(404).json({ error: 'Entry not found.' });
+  }
+  db.prepare('DELETE FROM entries WHERE id = ? AND workspace_id = ?').run(req.params.entryId, req.params.workspaceId);
+  createAuditLog(req.params.workspaceId, req.user.id, 'entry_deleted', 'entry', req.params.entryId, { type: existing.type });
+  return res.json({ ok: true, deleted_entry_id: req.params.entryId });
 });
 
 app.post('/api/workspaces/:workspaceId/entries', requireAuth, requireWorkspace, (req, res) => {
@@ -277,6 +545,69 @@ app.get('/api/workspaces/:workspaceId/invoices', requireAuth, requireWorkspace, 
   return res.json({ invoices });
 });
 
+app.patch('/api/workspaces/:workspaceId/invoices/:invoiceId', requireAuth, requireWorkspace, (req, res) => {
+  try {
+    const parsed = invoiceSchema.safeParse(req.body);
+    if (!parsed.success) {
+      return res.status(400).json({ error: 'Invalid invoice payload', details: parsed.error.flatten() });
+    }
+    const invoice = db.prepare('SELECT * FROM invoices WHERE id = ? AND workspace_id = ?').get(req.params.invoiceId, req.params.workspaceId);
+    if (!invoice) {
+      return res.status(404).json({ error: 'Invoice not found.' });
+    }
+
+    const { customer_id, customer, due_date, status, items } = parsed.data;
+    let resolvedCustomerId = customer_id || invoice.customer_id;
+    if (!resolvedCustomerId && customer) {
+      const nextCustomer = upsertCustomer(req.params.workspaceId, customer);
+      resolvedCustomerId = nextCustomer.id;
+    }
+
+    const subtotalCents = items.reduce((sum, item) => sum + (item.quantity * item.unit_price_cents), 0);
+    const taxCents = Math.round(subtotalCents * 0.16);
+    const totalCents = subtotalCents + taxCents;
+
+    db.prepare(`
+      UPDATE invoices
+      SET customer_id = ?, status = ?, subtotal_cents = ?, tax_cents = ?, total_cents = ?, paid_cents = ?, due_date = ?
+      WHERE id = ? AND workspace_id = ?
+    `).run(resolvedCustomerId, status || invoice.status, subtotalCents, taxCents, totalCents, Math.min(invoice.paid_cents, totalCents), due_date || invoice.due_date || null, req.params.invoiceId, req.params.workspaceId);
+
+    db.prepare('DELETE FROM invoice_items WHERE invoice_id = ? AND workspace_id = ?').run(req.params.invoiceId, req.params.workspaceId);
+    items.forEach((item) => {
+      const itemId = `invoice-item-${crypto.randomUUID()}`;
+      db.prepare(`
+        INSERT INTO invoice_items (id, workspace_id, invoice_id, description, quantity, unit_price_cents, total_cents)
+        VALUES (?, ?, ?, ?, ?, ?, ?)
+      `).run(itemId, req.params.workspaceId, req.params.invoiceId, item.description, item.quantity, item.unit_price_cents, item.quantity * item.unit_price_cents);
+    });
+
+    const updatedInvoice = db.prepare('SELECT * FROM invoices WHERE id = ?').get(req.params.invoiceId);
+    const invoiceItems = db.prepare('SELECT * FROM invoice_items WHERE invoice_id = ?').all(req.params.invoiceId);
+    createAuditLog(req.params.workspaceId, req.user.id, 'invoice_updated', 'invoice', req.params.invoiceId, { number: updatedInvoice.number, total_cents: totalCents });
+    return res.json({ invoice: updatedInvoice, invoiceItems });
+  } catch (error) {
+    return res.status(500).json({ error: 'Invoice update failed.', details: error.message });
+  }
+});
+
+app.delete('/api/workspaces/:workspaceId/invoices/:invoiceId', requireAuth, requireWorkspace, (req, res) => {
+  const invoice = db.prepare('SELECT * FROM invoices WHERE id = ? AND workspace_id = ?').get(req.params.invoiceId, req.params.workspaceId);
+  if (!invoice) {
+    return res.status(404).json({ error: 'Invoice not found.' });
+  }
+
+  const payments = db.prepare('SELECT 1 FROM payments WHERE invoice_id = ? AND workspace_id = ? LIMIT 1').get(req.params.invoiceId, req.params.workspaceId);
+  if (payments) {
+    return res.status(409).json({ error: 'Invoice cannot be deleted because payments are linked to it.' });
+  }
+
+  db.prepare('DELETE FROM invoice_items WHERE invoice_id = ? AND workspace_id = ?').run(req.params.invoiceId, req.params.workspaceId);
+  db.prepare('DELETE FROM invoices WHERE id = ? AND workspace_id = ?').run(req.params.invoiceId, req.params.workspaceId);
+  createAuditLog(req.params.workspaceId, req.user.id, 'invoice_deleted', 'invoice', req.params.invoiceId, { number: invoice.number });
+  return res.json({ ok: true, deleted_invoice_id: req.params.invoiceId });
+});
+
 app.post('/api/workspaces/:workspaceId/invoices', requireAuth, requireWorkspace, (req, res) => {
   try {
     const parsed = invoiceSchema.safeParse(req.body);
@@ -301,7 +632,7 @@ app.post('/api/workspaces/:workspaceId/invoices', requireAuth, requireWorkspace,
     const taxCents = Math.round(subtotalCents * 0.16);
     const totalCents = subtotalCents + taxCents;
     const invoiceId = `invoice-${crypto.randomUUID()}`;
-    const invoiceNumber = `INV-${Date.now().toString().slice(-6)}`;
+    const invoiceNumber = generateInvoiceNumber(workspaceId);
 
     db.prepare(`
       INSERT INTO invoices (id, workspace_id, customer_id, number, status, subtotal_cents, tax_cents, total_cents, paid_cents, due_date, created_by)
@@ -380,6 +711,40 @@ app.get('/api/workspaces/:workspaceId/expenses', requireAuth, requireWorkspace, 
   return res.json({ expenses });
 });
 
+app.patch('/api/workspaces/:workspaceId/expenses/:expenseId', requireAuth, requireWorkspace, (req, res) => {
+  try {
+    const parsed = expenseSchema.safeParse(req.body);
+    if (!parsed.success) {
+      return res.status(400).json({ error: 'Invalid expense payload', details: parsed.error.flatten() });
+    }
+    const current = db.prepare('SELECT * FROM expenses WHERE id = ? AND workspace_id = ?').get(req.params.expenseId, req.params.workspaceId);
+    if (!current) {
+      return res.status(404).json({ error: 'Expense not found.' });
+    }
+    const { vendor, description, category, amount_cents, status } = parsed.data;
+    db.prepare(`
+      UPDATE expenses
+      SET vendor = ?, description = ?, category = ?, amount_cents = ?, status = ?
+      WHERE id = ? AND workspace_id = ?
+    `).run(vendor, description, category, amount_cents, status, req.params.expenseId, req.params.workspaceId);
+    const updated = db.prepare('SELECT * FROM expenses WHERE id = ?').get(req.params.expenseId);
+    createAuditLog(req.params.workspaceId, req.user.id, 'expense_updated', 'expense', req.params.expenseId, { vendor, amount_cents });
+    return res.json({ expense: updated });
+  } catch (error) {
+    return res.status(500).json({ error: 'Expense update failed.', details: error.message });
+  }
+});
+
+app.delete('/api/workspaces/:workspaceId/expenses/:expenseId', requireAuth, requireWorkspace, (req, res) => {
+  const expense = db.prepare('SELECT * FROM expenses WHERE id = ? AND workspace_id = ?').get(req.params.expenseId, req.params.workspaceId);
+  if (!expense) {
+    return res.status(404).json({ error: 'Expense not found.' });
+  }
+  db.prepare('DELETE FROM expenses WHERE id = ? AND workspace_id = ?').run(req.params.expenseId, req.params.workspaceId);
+  createAuditLog(req.params.workspaceId, req.user.id, 'expense_deleted', 'expense', req.params.expenseId, { vendor: expense.vendor });
+  return res.json({ ok: true, deleted_expense_id: req.params.expenseId });
+});
+
 app.post('/api/workspaces/:workspaceId/expenses', requireAuth, requireWorkspace, (req, res) => {
   try {
     const parsed = expenseSchema.safeParse(req.body);
@@ -436,9 +801,85 @@ app.get('/api/workspaces/:workspaceId/reports/summary', requireAuth, requireWork
   });
 });
 
+app.get('/api/workspaces/:workspaceId/dashboard', requireAuth, requireWorkspace, (req, res) => {
+  const workspaceId = req.params.workspaceId;
+  const summaryRow = db.prepare(`
+    SELECT
+      COALESCE((SELECT SUM(total_cents) FROM invoices WHERE workspace_id = ? AND status = 'paid'), 0) AS paid_revenue_cents,
+      COALESCE((SELECT SUM(total_cents - paid_cents) FROM invoices WHERE workspace_id = ? AND status != 'paid'), 0) AS outstanding_cents,
+      COALESCE((SELECT SUM(amount_cents) FROM expenses WHERE workspace_id = ?), 0) AS expense_cents,
+      COALESCE((SELECT COUNT(*) FROM customers WHERE workspace_id = ?), 0) AS customer_count,
+      COALESCE((SELECT COUNT(*) FROM invoices WHERE workspace_id = ?), 0) AS invoice_count
+  `).get(workspaceId, workspaceId, workspaceId, workspaceId, workspaceId);
+
+  const recentInvoices = db.prepare(`
+    SELECT i.*, c.name AS customer_name
+    FROM invoices i
+    LEFT JOIN customers c ON c.id = i.customer_id
+    WHERE i.workspace_id = ?
+    ORDER BY i.created_at DESC
+    LIMIT 10
+  `).all(workspaceId);
+
+  const recentExpenses = db.prepare(`
+    SELECT * FROM expenses WHERE workspace_id = ? ORDER BY created_at DESC LIMIT 10
+  `).all(workspaceId);
+
+  const recentCustomers = db.prepare(`
+    SELECT * FROM customers WHERE workspace_id = ? ORDER BY updated_at DESC LIMIT 10
+  `).all(workspaceId);
+
+  return res.json({
+    summary: {
+      revenue_cents: Number(summaryRow.paid_revenue_cents || 0),
+      outstanding_cents: Number(summaryRow.outstanding_cents || 0),
+      expense_cents: Number(summaryRow.expense_cents || 0),
+      customer_count: Number(summaryRow.customer_count || 0),
+      invoice_count: Number(summaryRow.invoice_count || 0),
+    },
+    recent_invoices: recentInvoices,
+    recent_expenses: recentExpenses,
+    recent_customers: recentCustomers,
+  });
+});
+
 app.get('/api/workspaces/:workspaceId/inventory', requireAuth, requireWorkspace, (req, res) => {
   const inventory = db.prepare('SELECT * FROM inventory_products WHERE workspace_id = ? ORDER BY name ASC').all(req.params.workspaceId);
   return res.json({ inventory });
+});
+
+app.patch('/api/workspaces/:workspaceId/inventory/:itemId', requireAuth, requireWorkspace, requireWorkspaceAdmin, (req, res) => {
+  try {
+    const parsed = inventorySchema.safeParse(req.body);
+    if (!parsed.success) {
+      return res.status(400).json({ error: 'Invalid inventory payload', details: parsed.error.flatten() });
+    }
+    const current = db.prepare('SELECT * FROM inventory_products WHERE id = ? AND workspace_id = ?').get(req.params.itemId, req.params.workspaceId);
+    if (!current) {
+      return res.status(404).json({ error: 'Inventory item not found.' });
+    }
+    const { name, sku, category, stock_quantity, unit_price_cents, cost_price_cents, notes } = parsed.data;
+    db.prepare(`
+      UPDATE inventory_products
+      SET name = ?, sku = ?, category = ?, stock_quantity = ?, unit_price_cents = ?, cost_price_cents = ?, notes = ?, updated_at = CURRENT_TIMESTAMP
+      WHERE id = ? AND workspace_id = ?
+    `).run(name, sku, category, stock_quantity, unit_price_cents, cost_price_cents, notes || '', req.params.itemId, req.params.workspaceId);
+    const updated = db.prepare('SELECT * FROM inventory_products WHERE id = ?').get(req.params.itemId);
+    createAuditLog(req.params.workspaceId, req.user.id, 'inventory_updated', 'inventory', req.params.itemId, { name, sku });
+    return res.json({ inventory: updated });
+  } catch (error) {
+    return res.status(500).json({ error: 'Inventory update failed.', details: error.message });
+  }
+});
+
+app.delete('/api/workspaces/:workspaceId/inventory/:itemId', requireAuth, requireWorkspace, requireWorkspaceAdmin, (req, res) => {
+  const item = db.prepare('SELECT * FROM inventory_products WHERE id = ? AND workspace_id = ?').get(req.params.itemId, req.params.workspaceId);
+  if (!item) {
+    return res.status(404).json({ error: 'Inventory item not found.' });
+  }
+  db.prepare('DELETE FROM inventory_products WHERE id = ? AND workspace_id = ?').run(req.params.itemId, req.params.workspaceId);
+  createAuditLog(req.params.workspaceId, req.user.id, 'inventory_deleted', 'inventory', req.params.itemId, { name: item.name });
+  return res.json({ ok: true, deleted_inventory_id: req.params.itemId });
 });
 
 app.post('/api/workspaces/:workspaceId/inventory', requireAuth, requireWorkspace, requireWorkspaceAdmin, (req, res) => {
@@ -468,6 +909,7 @@ app.use((err, req, res, next) => {
   return res.status(500).json({ error: 'Unexpected server error.', details: err.message });
 });
 
+app.generateInvoiceNumber = generateInvoiceNumber;
 module.exports = app;
 
 if (require.main === module) {

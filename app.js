@@ -47,6 +47,7 @@ const state = {
   currency: "KES",
   backendStatus: "checking",
   backendMessage: "Checking backend...",
+  auth: { token: "", user: null, workspaceId: "", mode: "demo" },
   currentWorkspaceId: "workspace-kijani",
   workspaces: [
     {
@@ -144,6 +145,240 @@ const state = {
     { id: idFrom("sku003f30"), name: "Packaging set", sku: "PK-SET-01", category: "Packaging", quantity: 7, unitPrice: 680, costPrice: 330, notes: "Restock soon." }
   ]
 };
+
+const AUTH_STORAGE_KEY = "tendo-auth-session-v1";
+
+function readStoredAuth() {
+  try {
+    const raw = localStorage.getItem(AUTH_STORAGE_KEY);
+    if (!raw) return null;
+    return JSON.parse(raw);
+  } catch (error) {
+    return null;
+  }
+}
+
+function persistAuth(auth) {
+  if (!auth || !auth.token) {
+    localStorage.removeItem(AUTH_STORAGE_KEY);
+    return;
+  }
+  localStorage.setItem(AUTH_STORAGE_KEY, JSON.stringify(auth));
+}
+
+function applyAuth(session) {
+  state.auth = {
+    token: session?.token || "",
+    user: session?.user || null,
+    workspaceId: session?.workspaceId || state.currentWorkspaceId || "",
+    mode: session?.token ? "backend" : "demo",
+  };
+}
+
+function getAuthHeaders(extra = {}) {
+  const headers = { ...(extra.headers || {}) };
+  if (state.auth && state.auth.token) {
+    headers.Authorization = `Bearer ${state.auth.token}`;
+  }
+  if (!headers["Content-Type"] && !(extra.body instanceof FormData)) {
+    headers["Content-Type"] = "application/json";
+  }
+  return headers;
+}
+
+async function apiRequest(path, options = {}) {
+  const baseUrl = getBackendCandidates()[0] || "http://localhost:3100";
+  const response = await fetch(`${baseUrl.replace(/\/$/, "")}${path}`, {
+    cache: "no-store",
+    ...options,
+    headers: getAuthHeaders(options),
+    ...(options.body && !(options.body instanceof FormData) && typeof options.body !== "string" ? { body: JSON.stringify(options.body) } : {}),
+  });
+
+  const text = await response.text();
+  const payload = text ? (() => { try { return JSON.parse(text); } catch (error) { return text; } })() : null;
+
+  if (!response.ok) {
+    if (response.status === 401) {
+      state.auth = { token: "", user: null, workspaceId: "", mode: "demo" };
+      persistAuth(null);
+      throw new Error(payload?.error || "Authentication required.");
+    }
+    throw new Error(payload?.error || `Request failed (${response.status}).`);
+  }
+
+  return payload;
+}
+
+async function loadWorkspaceData() {
+  if (!state.auth.token || state.backendStatus !== "connected") return;
+
+  try {
+    const me = await apiRequest("/api/me");
+    state.auth.user = me.user;
+    const workspacesResponse = await apiRequest("/api/workspaces");
+    const workspaces = workspacesResponse.workspaces || [];
+
+    state.workspaces = workspaces.map(workspace => ({
+      id: workspace.id,
+      name: workspace.name,
+      type: workspace.type || "Business",
+      profile: {
+        businessType: workspace.type || "Business",
+        businessEmail: "",
+        businessPhone: "",
+        location: "",
+        address: "",
+        taxConfig: "",
+        registration: "",
+      },
+    }));
+
+    if (!state.workspaces.length) {
+      state.workspaces = [
+        {
+          id: state.auth.workspaceId || "workspace-demo",
+          name: me.user.name + " workspace",
+          type: "Business",
+          profile: { businessType: "Business", businessEmail: "", businessPhone: "", location: "", address: "", taxConfig: "", registration: "" },
+        }
+      ];
+    }
+
+    const selectedWorkspaceId = state.auth.workspaceId || state.workspaces[0]?.id || state.currentWorkspaceId;
+    if (selectedWorkspaceId) {
+      state.currentWorkspaceId = selectedWorkspaceId;
+      state.auth.workspaceId = selectedWorkspaceId;
+      persistAuth(state.auth);
+      const [summary, customers, invoices, expenses, inventory, members] = await Promise.all([
+        apiRequest(`/api/workspaces/${selectedWorkspaceId}/dashboard`),
+        apiRequest(`/api/workspaces/${selectedWorkspaceId}/customers`),
+        apiRequest(`/api/workspaces/${selectedWorkspaceId}/invoices`),
+        apiRequest(`/api/workspaces/${selectedWorkspaceId}/expenses`),
+        apiRequest(`/api/workspaces/${selectedWorkspaceId}/inventory`),
+        apiRequest(`/api/workspaces/${selectedWorkspaceId}/members`),
+      ]);
+
+      const backendMembers = (members.members || []).map(member => ({
+        id: member.id,
+        name: member.name,
+        role: member.role || "member",
+        email: member.email || "",
+        status: member.role === "owner" ? "Active" : "Active",
+        permissions: member.permissions || {
+          invoices: "view",
+          expenses: "view",
+          customers: "view",
+          inventory: "view",
+          reports: "view",
+          settings: "none",
+        },
+      }));
+
+      state.members = backendMembers.length ? backendMembers : state.members;
+
+      const backendCustomers = (customers.customers || []).map(customer => ({
+        id: customer.id,
+        name: customer.name,
+        phone: customer.phone || "",
+        email: customer.email || "",
+        notes: customer.notes || "",
+        createdAt: customer.created_at || new Date().toISOString(),
+        updatedAt: customer.updated_at || new Date().toISOString(),
+        purchases: [],
+      }));
+
+      const backendInvoices = (invoices.invoices || []).map(invoice => ({
+        id: invoice.id,
+        type: "invoice",
+        documentNumber: invoice.number,
+        description: invoice.number,
+        customer: invoice.customer_name || "Customer",
+        customerPhone: "",
+        customerEmail: "",
+        items: invoice.number,
+        amount: Number((invoice.subtotal_cents || 0) / 100),
+        taxRate: 16,
+        taxAmount: Number((invoice.tax_cents || 0) / 100),
+        total: Number((invoice.total_cents || 0) / 100),
+        date: invoice.created_at ? invoice.created_at.slice(0, 10) : isoDate(new Date()),
+        dueDate: invoice.due_date || "",
+        status: invoice.status || "draft",
+        notes: "",
+        createdAt: invoice.created_at || new Date().toISOString(),
+        updatedAt: invoice.created_at || new Date().toISOString(),
+      }));
+
+      const backendExpenses = (expenses.expenses || []).map(expense => ({
+        id: expense.id,
+        type: "expense",
+        description: expense.description,
+        supplier: expense.vendor,
+        category: expense.category,
+        amount: Number((expense.amount_cents || 0) / 100),
+        taxRate: 0,
+        taxAmount: 0,
+        total: Number((expense.amount_cents || 0) / 100),
+        date: expense.created_at ? expense.created_at.slice(0, 10) : isoDate(new Date()),
+        status: expense.status || "recorded",
+        notes: "",
+        createdAt: expense.created_at || new Date().toISOString(),
+        updatedAt: expense.created_at || new Date().toISOString(),
+      }));
+
+      const backendInventory = (inventory.inventory || []).map(item => ({
+        id: item.id,
+        name: item.name,
+        sku: item.sku,
+        category: item.category,
+        quantity: Number(item.stock_quantity || 0),
+        unitPrice: Number((item.unit_price_cents || 0) / 100),
+        costPrice: Number((item.cost_price_cents || 0) / 100),
+        notes: item.notes || "",
+      }));
+
+      state.businessName = workspaces.find(workspace => workspace.id === selectedWorkspaceId)?.name || me.user.name + " workspace";
+      state.businessProfile = {
+        businessType: workspaces.find(workspace => workspace.id === selectedWorkspaceId)?.type || "Business",
+        businessEmail: "",
+        businessPhone: "",
+        location: "",
+        address: "",
+        taxConfig: "",
+        registration: "",
+      };
+      state.records = [...backendInvoices, ...backendExpenses];
+      state.customers = backendCustomers;
+      state.inventory = backendInventory;
+      state.info = summary;
+      if (Array.isArray(summary.recent_invoices)) {
+        state.records = [...backendInvoices, ...backendExpenses];
+      }
+    }
+  } catch (error) {
+    state.backendMessage = "Demo mode fallback. Sign in to load live workspace data.";
+    console.warn(error);
+  }
+}
+
+async function ensureLiveSession() {
+  const stored = readStoredAuth();
+  if (stored) {
+    applyAuth(stored);
+  }
+
+  if (state.backendStatus !== "connected") {
+    state.auth.mode = "demo";
+    return;
+  }
+
+  if (!state.auth.token) {
+    state.auth.mode = "demo";
+    return;
+  }
+
+  await loadWorkspaceData();
+}
 
 for (const customer of state.customers) {
   for (const invoice of state.records.filter(r => r.type === "invoice" && r.customer === customer.name)) {
@@ -254,6 +489,29 @@ function renderOnboardingCard() {
     </div>
     <div class="onboarding-actions"><button class="button button-secondary" type="button" data-action="hide-onboarding">Save later</button><button class="button button-primary" type="submit">Finish setup</button></div>
   </form></section>`;
+}
+
+function openAuthDialog() {
+  const authMode = state.auth?.user ? "Account" : "Sign in";
+  const content = `
+    <div class="setup-form-shell">
+      <div class="setup-form-body">
+        <form id="auth-form" class="setup-form">
+          <div class="dialog-header"><div><h2 id="setup-title">${authMode}</h2><p>Use your TENDO workspace account or create one instantly.</p></div><button type="button" class="icon-button" data-action="close-setup" aria-label="Close account prompt">${icon("close")}</button></div>
+          <div class="setup-grid">
+            <div class="form-field full"><label for="auth-name">Full name</label><input class="form-control" id="auth-name" name="name" value="${escapeHtml(state.auth?.user?.name || "")}" placeholder="Your name"></div>
+            <div class="form-field full"><label for="auth-email">Email</label><input class="form-control" id="auth-email" name="email" type="email" placeholder="you@company.com" required></div>
+            <div class="form-field full"><label for="auth-password">Password</label><input class="form-control" id="auth-password" name="password" type="password" minLength="8" placeholder="At least 8 characters" required></div>
+          </div>
+          <div class="dialog-footer setup-footer"><button type="button" class="button button-secondary" data-action="close-setup">Cancel</button><button type="submit" class="button button-primary">${state.auth?.user ? "Save account" : "Continue"}</button></div>
+        </form>
+      </div>
+      <aside class="setup-summary">
+        <div class="summary-card"><p class="summary-label">Account sync</p><strong>TENDO workspace</strong><ul><li>Authenticate once to load real workspace data.</li><li>Keep invoices, customers, and expenses in the shared backend.</li><li>Switch to demo mode any time.</li></ul></div>
+      </aside>
+    </div>`;
+  $("#setup-content").innerHTML = content;
+  $("#setup-dialog").showModal();
 }
 
 function openSetupWizard() {
@@ -563,16 +821,18 @@ function renderSettings() {
   `).join("");
   const backendStateText = state.backendStatus === "connected" ? "Connected" : state.backendStatus === "checking" ? "Checking" : "Demo mode";
   const backendStateClass = state.backendStatus === "connected" ? "status-live" : "status-pending";
-  return `<div class="settings-layout"><section class="settings-card"><h2>Business workspace</h2><p>Personalise the sample workspace. These changes are temporary and reset on refresh.</p>
+  const authSummary = state.auth?.user ? `${state.auth.user.name} · ${state.auth.user.email}` : "Not signed in";
+  return `<div class="settings-layout"><section class="settings-card"><h2>Business workspace</h2><p>Manage the live workspace and account sync for this business.</p>
     <div class="form-grid"><div class="form-field"><label for="business-name">Business name</label><input class="form-control" id="business-name" value="${escapeHtml(state.businessName)}"></div><div class="form-field"><label for="currency-select">Workspace currency</label><select class="form-control" id="currency-select"><option value="KES" ${state.currency === "KES" ? "selected" : ""}>KES — Kenyan shilling</option><option value="USD" ${state.currency === "USD" ? "selected" : ""}>USD — US dollar</option><option value="EUR" ${state.currency === "EUR" ? "selected" : ""}>EUR — Euro</option></select></div></div>
     <div class="setting-row"><div class="setting-copy"><strong>Inventory management</strong><small>Turn this off if your business does not track physical products.</small></div><input class="switch" id="inventory-toggle" type="checkbox" ${state.inventoryEnabled ? "checked" : ""} aria-label="Enable inventory management"></div>
     <div class="setting-row"><div class="setting-copy"><strong>Business profile</strong><small>${escapeHtml(state.businessProfile.businessType)} · ${escapeHtml(state.businessProfile.location)}</small></div><button class="button button-secondary" type="button" data-action="review-setup">Review setup</button></div>
-    <div class="setting-row"><div class="setting-copy"><strong>Workspaces</strong><small>${state.workspaces.length} active workspaces in this demo</small></div><button class="button button-secondary" type="button" id="new-workspace">Add workspace</button></div>
+    <div class="setting-row"><div class="setting-copy"><strong>Workspaces</strong><small>${state.workspaces.length} active workspaces in this account</small></div><button class="button button-secondary" type="button" id="new-workspace">Add workspace</button></div>
     <div class="setting-row"><div class="setting-copy"><strong>Backend status</strong><small>${escapeHtml(state.backendMessage)}</small></div><div style="display:flex;align-items:center;gap:8px"><span class="status-badge ${backendStateClass}">${backendStateText}</span><button class="button button-secondary" type="button" data-action="sync-backend">Refresh</button></div></div>
+    <div class="setting-row"><div class="setting-copy"><strong>Account</strong><small>${escapeHtml(authSummary)}</small></div><button class="button button-secondary" type="button" data-action="open-auth-modal">${state.auth?.user ? "Switch account" : "Sign in"}</button></div>
     <div class="setting-row"><div class="setting-copy"><strong>Team access</strong><small>Role-based permissions and member ownership</small></div><button class="button button-secondary" type="button" data-action="open-member-manager">Manage members</button></div>
-    <div class="setting-row"><div class="setting-copy"><strong>Data in this prototype</strong><small>Records are held in memory only. Do not enter real or sensitive business information.</small></div><span class="status-badge status-pending">Temporary</span></div>
+    <div class="setting-row"><div class="setting-copy"><strong>Session mode</strong><small>${state.auth?.user ? "Authenticated workspace sync" : "Demo workspace"}</small></div>${state.auth?.user ? `<button class="button button-secondary" type="button" data-action="sign-out">Sign out</button>` : ""}</div>
     <button class="button button-primary" id="save-settings">${icon("check")} Save preferences</button></section>
-    <aside class="settings-card prototype-card"><span class="metric-icon">${icon("spark")}</span><strong>Prototype, not a live service</strong><p>This standalone interface has no sign-in, backend, database, tenant isolation, or subscription processing. Sample data is fictional and changes reset when you refresh.</p>
+    <aside class="settings-card prototype-card"><span class="metric-icon">${icon("spark")}</span><strong>Workspace operating mode</strong><p>${state.auth?.user ? "Information is being synced against the live TENDO backend and saved workspace records." : "You are in demo mode. Sign in to connect a real workspace and enable persisted records."}</p>
       <div class="role-list">${["Owner", "Admin", "Accountant", "Sales lead", "Viewer"].map(role => `<span class="role-pill">${role}</span>`).join("")}</div>
       <div class="workspace-permissions">
         <h3>Current permissions</h3>
@@ -600,6 +860,7 @@ async function refreshBackendStatus() {
       state.backendStatus = "connected";
       state.backendMessage = `${health.service || "TENDO backend"} is live on ${host}`;
       if (pageContent && state.page === "settings") pageContent.innerHTML = renderSettings();
+      await ensureLiveSession();
       return;
     } catch (error) {
       lastError = error;
@@ -683,9 +944,100 @@ function openForm(type, record = null) {
   (customer || inventory ? $("#field-name") : $("#field-amount"))?.focus();
 }
 
-function makeRecordFromForm(form) {
+async function makeRecordFromForm(form) {
   const type = form.dataset.type, id = form.dataset.id, data = Object.fromEntries(new FormData(form).entries());
   const existing = id ? findRecord(type, id) : null, now = new Date().toISOString();
+
+  if (state.auth?.token && state.backendStatus === "connected" && !id) {
+    const workspaceId = state.auth.workspaceId || state.currentWorkspaceId;
+    try {
+      if (type === "customer") {
+        const response = await apiRequest(`/api/workspaces/${workspaceId}/customers`, {
+          method: "POST",
+          body: {
+            name: String(data.name || "").trim(),
+            phone: String(data.phone || "").trim(),
+            email: String(data.email || "").trim(),
+            notes: String(data.notes || "").trim(),
+          },
+        });
+        state.customers.push({
+          id: response.customer.id,
+          name: response.customer.name,
+          phone: response.customer.phone || "",
+          email: response.customer.email || "",
+          notes: response.customer.notes || "",
+          createdAt: response.customer.created_at || now,
+          updatedAt: response.customer.updated_at || now,
+          purchases: [],
+        });
+        $("#record-dialog").close();
+        showToast("Customer synced to backend.");
+        navigate(state.page);
+        return;
+      }
+      if (type === "expense") {
+        const amount = Math.round(Number(data.amount || 0) * 100);
+        const response = await apiRequest(`/api/workspaces/${workspaceId}/expenses`, {
+          method: "POST",
+          body: {
+            vendor: String(data.supplier || "").trim() || "Supplier",
+            description: String(data.description || "").trim(),
+            category: String(data.category || "").trim() || "General",
+            amount_cents: amount,
+            status: String(data.status || "recorded"),
+          },
+        });
+        $("#record-dialog").close();
+        showToast("Expense synced to backend.");
+        await loadWorkspaceData();
+        navigate(state.page);
+        return;
+      }
+      if (type === "invoice") {
+        const amount = Number(data.amount || 0);
+        const customerName = String(data.customer || "").trim();
+        const customerPhone = String(data.customerPhone || "").trim();
+        const customerEmail = String(data.customerEmail || "").trim();
+        const payload = {
+          customer: customerName ? { name: customerName, phone: customerPhone, email: customerEmail, notes: String(data.notes || "").trim() } : undefined,
+          customer_id: undefined,
+          due_date: data.dueDate ? String(data.dueDate) : undefined,
+          status: String(data.status || "draft"),
+          items: [{ description: String(data.items || data.description || "Invoice item").trim(), quantity: 1, unit_price_cents: Math.round(amount * 100) }],
+        };
+        const response = await apiRequest(`/api/workspaces/${workspaceId}/invoices`, { method: "POST", body: payload });
+        $("#record-dialog").close();
+        showToast("Invoice synced to backend.");
+        await loadWorkspaceData();
+        navigate(state.page);
+        return;
+      }
+      if (type === "inventory") {
+        const response = await apiRequest(`/api/workspaces/${workspaceId}/inventory`, {
+          method: "POST",
+          body: {
+            name: String(data.name || "").trim(),
+            sku: String(data.sku || "").trim() || `SKU-${Date.now()}`,
+            category: String(data.category || "").trim() || "General",
+            stock_quantity: Number(data.quantity || 0),
+            unit_price_cents: Math.round(Number(data.unitPrice || 0) * 100),
+            cost_price_cents: Math.round(Number(data.costPrice || 0) * 100),
+            notes: String(data.notes || "").trim(),
+          },
+        });
+        $("#record-dialog").close();
+        showToast("Inventory item synced to backend.");
+        await loadWorkspaceData();
+        navigate(state.page);
+        return;
+      }
+    } catch (error) {
+      showToast(error.message || "Could not sync data to the backend.", "error");
+      return;
+    }
+  }
+
   if (type === "invoice" || type === "expense") {
     const amount = Number(data.amount), rate = data.taxRate === "custom" ? (data.customTaxRate.trim() === "" ? NaN : Number(data.customTaxRate)) : Number(data.taxRate);
     if (!Number.isFinite(rate) || rate < 0 || rate > 100) return showToast("Enter a valid tax rate between 0 and 100.", "error");
@@ -815,6 +1167,8 @@ document.addEventListener("click", event => {
     if (name === "share") { const record = findRecord("invoice", id); if (record) shareInvoice(record); }
     if (name === "review-setup") { openSetupWizard(); return; }
     if (name === "open-member-manager") { openMemberManager(); return; }
+    if (name === "open-auth-modal") { openAuthDialog(); return; }
+    if (name === "sign-out") { state.auth = { token: "", user: null, workspaceId: "", mode: "demo" }; persistAuth(null); showToast("Signed out."); navigate("settings"); return; }
     if (name === "sync-backend") { refreshBackendStatus(); return; }
     if (name === "toggle-operation") {
       const entry = state.operations.find(item => item.id === id);
@@ -948,6 +1302,36 @@ document.addEventListener("submit", event => {
     showToast("Workspace setup saved.");
     navigate("overview");
   }
+  if (event.target.id === "auth-form") {
+    event.preventDefault();
+    const formData = Object.fromEntries(new FormData(event.target).entries());
+    const email = String(formData.email || "").trim();
+    const password = String(formData.password || "");
+    const name = String(formData.name || "").trim();
+    if (!email || !password || password.length < 8) {
+      return showToast("Enter a valid email and password with at least 8 characters.", "error");
+    }
+    (async () => {
+      try {
+        const endpoint = name ? "/api/auth/register" : "/api/auth/login";
+        const payload = name ? { name, email, password } : { email, password };
+        const response = await apiRequest(endpoint, { method: "POST", body: payload });
+        state.auth = { token: response.token, user: response.user, workspaceId: response.workspaceId || state.currentWorkspaceId || "", mode: "backend" };
+        persistAuth(state.auth);
+        state.currentWorkspaceId = state.auth.workspaceId || state.currentWorkspaceId;
+        if (response.workspaceId) {
+          state.workspaces = [...state.workspaces.filter(workspace => workspace.id !== response.workspaceId), { id: response.workspaceId, name: `${response.user.name}'s workspace`, type: "Business", profile: { businessType: "Business", businessEmail: "", businessPhone: "", location: "", address: "", taxConfig: "", registration: "" } }];
+        }
+        state.businessName = response.user.name + " workspace";
+        $("#setup-dialog").close();
+        await loadWorkspaceData();
+        showToast("Connected to TENDO backend.");
+        navigate("overview");
+      } catch (error) {
+        showToast(error.message || "Unable to sign in right now.", "error");
+      }
+    })();
+  }
   if (event.target.id === "setup-form") {
     event.preventDefault();
     const formData = Object.fromEntries(new FormData(event.target).entries());
@@ -1050,6 +1434,7 @@ document.addEventListener("keydown", event => {
 });
 $("#record-dialog").addEventListener("click", event => { if (event.target === $("#record-dialog")) $("#record-dialog").close(); });
 
+applyAuth(readStoredAuth());
 syncCurrentWorkspace();
 $("#workspace-name").textContent = state.businessName;
 $("#workspace-menu").innerHTML = renderWorkspaceMenu();

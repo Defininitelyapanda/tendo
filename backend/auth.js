@@ -10,11 +10,18 @@ function hashPassword(password, salt = crypto.randomBytes(16).toString('hex')) {
 }
 
 function verifyPassword(password, storedHash) {
-  if (!storedHash) return false;
-  const [salt, hash] = storedHash.split(':');
-  if (!salt || !hash) return false;
+  if (!storedHash || typeof storedHash !== 'string') return false;
+  const parts = storedHash.split(':');
+  const salt = parts[0];
+  const hash = parts.slice(1).join(':');
+  if (!salt || !hash || !/^[a-f0-9]+$/i.test(hash)) return false;
+
   const candidate = crypto.pbkdf2Sync(password, salt, 100000, 64, 'sha512').toString('hex');
-  return crypto.timingSafeEqual(Buffer.from(candidate), Buffer.from(hash));
+  const expected = Buffer.from(hash, 'hex');
+  const actual = Buffer.from(candidate, 'hex');
+
+  if (expected.length !== actual.length) return false;
+  return crypto.timingSafeEqual(expected, actual);
 }
 
 function issueToken(user) {

@@ -9,12 +9,20 @@
     "backend:watch": "node --watch backend/index.js",
     "backend:check": "node --check backend/index.js && node --check backend/auth.js && node --check backend/db.js && node --check backend/validation.js",
     "db:backup": "node scripts/backup-db.js",
-    "check": "node --check app.js"
+    "check": "node --check app.js",
+    "dev": "concurrently -k \"npm run backend\" \"npm run start\"",
+    "build": "npm run backend:check && npm run check && npm test",
+    "desktop": "npm --prefix desktop start",
+    "desktop:build": "npm --prefix desktop run dist",
+    "test": "node --test"
   },
   "dependencies": {
     "dotenv": "^16.4.5",
     "express": "^4.21.2",
     "jsonwebtoken": "^9.0.2",
     "zod": "^3.23.8"
+  },
+  "devDependencies": {
+    "concurrently": "^10.0.7"
   }
 }
