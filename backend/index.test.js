@@ -89,6 +89,83 @@ test('security middleware blocks env file access and auth workflow works', async
     assert.match(invoiceResponse.json.invoice.number, /^INV-[A-Z0-9]+-[A-F0-9]+$/);
     assert.ok(invoiceResponse.json.invoice.id);
 
+    const portalEmail = `portal-${Date.now()}@example.com`;
+    const portalCustomerResponse = await request(port, `/api/workspaces/${workspaceId}/customers`, {
+      method: 'POST',
+      headers: authHeader,
+      body: { name: 'Portal Customer', email: portalEmail },
+    });
+    assert.equal(portalCustomerResponse.status, 201);
+
+    const portalInvoiceResponse = await request(port, `/api/workspaces/${workspaceId}/invoices`, {
+      method: 'POST',
+      headers: authHeader,
+      body: {
+        customer_id: portalCustomerResponse.json.customer.id,
+        status: 'pending',
+        items: [{ description: 'Customer portal service', quantity: 1, unit_price_cents: 7500 }],
+      },
+    });
+    assert.equal(portalInvoiceResponse.status, 201);
+
+    const portalRegistration = await request(port, '/api/customer-portal/register', {
+      method: 'POST',
+      body: { name: 'Portal Customer', email: portalEmail, password: 'portalpass123' },
+    });
+    assert.equal(portalRegistration.status, 202);
+
+    const pendingPortalLogin = await request(port, '/api/customer-portal/login', {
+      method: 'POST',
+      body: { email: portalEmail, password: 'portalpass123' },
+    });
+    assert.equal(pendingPortalLogin.status, 403);
+
+    const accessRequests = await request(port, `/api/workspaces/${workspaceId}/customer-portal-requests`, {
+      headers: authHeader,
+    });
+    const portalAccount = accessRequests.json.accounts.find(account => account.email === portalEmail);
+    assert.ok(portalAccount);
+    assert.ok(portalAccount.customer_candidates.some(customer => customer.id === portalCustomerResponse.json.customer.id));
+
+    const mismatchedApproval = await request(port, `/api/workspaces/${workspaceId}/customer-portal-requests/${portalAccount.id}/approve`, {
+      method: 'POST',
+      headers: authHeader,
+      body: { customer_id: customerResponse.json.customer.id },
+    });
+    assert.equal(mismatchedApproval.status, 404);
+
+    const approvePortal = await request(port, `/api/workspaces/${workspaceId}/customer-portal-requests/${portalAccount.id}/approve`, {
+      method: 'POST',
+      headers: authHeader,
+      body: { customer_id: portalCustomerResponse.json.customer.id },
+    });
+    assert.equal(approvePortal.status, 200);
+
+    const portalLogin = await request(port, '/api/customer-portal/login', {
+      method: 'POST',
+      body: { email: portalEmail, password: 'portalpass123' },
+    });
+    assert.equal(portalLogin.status, 200);
+    const portalHeader = { Authorization: `Bearer ${portalLogin.json.token}` };
+
+    const portalInvoices = await request(port, '/api/customer-portal/invoices', {
+      headers: portalHeader,
+    });
+    assert.equal(portalInvoices.status, 200);
+    assert.deepEqual(portalInvoices.json.invoices.map(item => item.id), [portalInvoiceResponse.json.invoice.id]);
+
+    const portalWorkspaceAccess = await request(port, `/api/workspaces/${workspaceId}/customers`, {
+      headers: portalHeader,
+    });
+    assert.equal(portalWorkspaceAccess.status, 403);
+
+    const addPortalAccountAsMember = await request(port, `/api/workspaces/${workspaceId}/members`, {
+      method: 'POST',
+      headers: authHeader,
+      body: { email: portalEmail, role: 'member' },
+    });
+    assert.equal(addPortalAccountAsMember.status, 400);
+
     const updateCustomerResponse = await request(port, `/api/workspaces/${workspaceId}/customers/${customerResponse.json.customer.id}`, {
       method: 'PATCH',
       headers: authHeader,
@@ -153,6 +230,11 @@ test('security middleware blocks env file access and auth workflow works', async
 
     assert.equal(addMemberResponse.status, 201);
     assert.equal(addMemberResponse.json.member.email, secondUser.email);
+
+    const memberAccessRequests = await request(port, `/api/workspaces/${workspaceId}/customer-portal-requests`, {
+      headers: { Authorization: `Bearer ${secondToken}` },
+    });
+    assert.equal(memberAccessRequests.status, 403);
 
     const secondMemberList = await request(port, `/api/workspaces/${workspaceId}/members`, {
       headers: { Authorization: `Bearer ${secondToken}` },

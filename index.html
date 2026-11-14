@@ -35,7 +35,7 @@
   <div class="app-shell">
     <aside class="sidebar" id="sidebar">
       <a class="brand" href="#" data-nav="overview" aria-label="TENDO overview"><span class="brand-mark">t</span><span class="brand-name">TENDO<span class="brand-period">.</span></span></a>
-      <div class="workspace-switcher" id="workspace-switcher" aria-label="Switch workspace" tabindex="0"><span class="workspace-avatar">K</span><span class="workspace-copy"><strong id="workspace-name">Kijani Studio</strong><small>Business workspace</small></span><span class="chevron">⌄</span></div>
+      <div class="workspace-switcher" id="workspace-switcher" aria-label="Switch workspace" tabindex="0"><span class="workspace-avatar" id="workspace-avatar">T</span><span class="workspace-copy"><strong id="workspace-name">TENDO workspace</strong><small>Business workspace</small></span><span class="chevron">⌄</span></div>
       <div class="workspace-menu hidden" id="workspace-menu" aria-label="Workspace list"></div>
       <div class="nav-caption">WORKSPACE</div>
       <nav class="main-nav" aria-label="Main navigation">
@@ -53,17 +53,17 @@
       <div class="sidebar-bottom">
         <div class="sidebar-tip"><span class="tip-icon"><svg><use href="#i-spark"/></svg></span><strong>Good business, in order.</strong><p>Your workspace keeps the important things together.</p></div>
         <button class="nav-link" data-nav="settings"><svg><use href="#i-settings"/></svg><span>Settings</span></button>
-        <div class="profile-row"><span class="profile-avatar">TK</span><span class="profile-copy"><strong>Tonnie K.</strong><small>Workspace owner</small></span><button class="icon-button profile-menu" aria-label="Profile options"><svg><use href="#i-more"/></svg></button></div>
+        <div class="profile-row"><span class="profile-avatar" id="profile-avatar">—</span><span class="profile-copy"><strong id="profile-name">Not signed in</strong><small id="profile-role">Sign in to your workspace</small></span></div>
       </div>
     </aside>
     <div class="mobile-backdrop" id="mobile-backdrop"></div>
     <main class="main-area">
       <header class="topbar">
         <button class="icon-button mobile-menu" id="mobile-menu" aria-label="Open navigation"><svg><use href="#i-menu"/></svg></button>
-        <div class="topbar-context"><span class="breadcrumb">Kijani Studio</span><span class="breadcrumb-divider">/</span><span id="topbar-section">Overview</span></div>
-        <div class="topbar-actions"><label class="global-search"><svg><use href="#i-search"/></svg><input id="search-input" type="search" placeholder="Search this workspace" aria-label="Search current workspace"><kbd>⌘ K</kbd></label><span class="status-live-pill"><span></span> Live workspace</span><button class="avatar-button" aria-label="Account">TK</button></div>
+        <div class="topbar-context"><span class="breadcrumb" id="workspace-breadcrumb">TENDO</span><span class="breadcrumb-divider">/</span><span id="topbar-section">Overview</span></div>
+        <div class="topbar-actions"><label class="global-search"><svg><use href="#i-search"/></svg><input id="search-input" type="search" placeholder="Search this workspace" aria-label="Search current workspace"><kbd>⌘ K</kbd></label><button class="button button-secondary customer-login-button" type="button" data-action="customer-portal-open">Customer sign in</button><button class="button button-secondary" id="header-sign-out" type="button" data-action="sign-out" hidden>Sign out</button></div>
       </header>
-      <div class="workspace-status-banner"><span class="notice-dot"></span><strong>Production workspace</strong><span>Connected to the live TENDO backend</span></div>
+      <div class="workspace-status-banner"><span class="notice-dot"></span><strong>Production workspace</strong><span id="workspace-connection-message">Checking backend connection...</span></div>
       <section class="page-heading"><div><p class="eyebrow" id="page-eyebrow">YOUR BUSINESS, AT A GLANCE</p><h1 id="page-title">Overview</h1><p class="page-subtitle" id="page-subtitle">A clear view of the work moving your business forward.</p></div><div class="heading-actions"><span class="date-chip" id="today-chip"></span><button class="button button-primary" id="new-record"><svg><use href="#i-plus"/></svg><span>New invoice</span></button></div></section>
       <section id="page-content" class="page-content"></section>
       <footer class="app-footer"><span>Business, in order.</span><span>Tax calculations are estimates. No KRA or eTIMS connection.</span></footer>

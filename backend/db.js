@@ -96,6 +96,20 @@ db.exec(`
   CREATE INDEX IF NOT EXISTS idx_customers_workspace ON customers(workspace_id);
   CREATE INDEX IF NOT EXISTS idx_customers_lookup ON customers(workspace_id, email, phone, name);
 
+  CREATE TABLE IF NOT EXISTS customer_portal_links (
+    user_id TEXT NOT NULL,
+    workspace_id TEXT NOT NULL,
+    customer_id TEXT NOT NULL,
+    data_classification TEXT NOT NULL DEFAULT '${dataClassification}',
+    created_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP,
+    PRIMARY KEY (user_id, workspace_id, customer_id),
+    FOREIGN KEY (user_id) REFERENCES users(id),
+    FOREIGN KEY (workspace_id) REFERENCES workspaces(id),
+    FOREIGN KEY (customer_id) REFERENCES customers(id)
+  );
+
+  CREATE INDEX IF NOT EXISTS idx_customer_portal_links_customer ON customer_portal_links(customer_id, workspace_id);
+
   CREATE TABLE IF NOT EXISTS entries (
     id TEXT PRIMARY KEY,
     workspace_id TEXT NOT NULL,
@@ -222,8 +236,8 @@ db.exec(`
   );
 `);
 
-['users', 'workspaces', 'workspace_members', 'customers', 'entries', 'invoices', 'invoice_items', 'payments', 'expenses', 'inventory_products', 'integration_connections', 'audit_logs'].forEach(addDataClassificationColumn);
-['users', 'workspaces', 'workspace_members', 'customers', 'entries', 'invoices', 'invoice_items', 'payments', 'expenses', 'inventory_products', 'integration_connections', 'audit_logs'].forEach((tableName) => {
+['users', 'workspaces', 'workspace_members', 'customers', 'customer_portal_links', 'entries', 'invoices', 'invoice_items', 'payments', 'expenses', 'inventory_products', 'integration_connections', 'audit_logs'].forEach(addDataClassificationColumn);
+['users', 'workspaces', 'workspace_members', 'customers', 'customer_portal_links', 'entries', 'invoices', 'invoice_items', 'payments', 'expenses', 'inventory_products', 'integration_connections', 'audit_logs'].forEach((tableName) => {
   db.exec(`UPDATE ${tableName} SET data_classification = '${dataClassification}' WHERE data_classification IS NULL OR data_classification = ''`);
 });
 

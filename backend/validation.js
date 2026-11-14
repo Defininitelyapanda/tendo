@@ -11,6 +11,8 @@ const loginSchema = z.object({
   password: z.string().min(8).max(200),
 });
 
+const customerPortalRegisterSchema = registerSchema;
+
 const workspaceSchema = z.object({
   name: z.string().trim().min(2).max(150),
   type: z.string().trim().min(2).max(80).optional(),
@@ -74,6 +76,7 @@ const inventorySchema = z.object({
 module.exports = {
   registerSchema,
   loginSchema,
+  customerPortalRegisterSchema,
   workspaceSchema,
   customerSchema,
   invoiceSchema,

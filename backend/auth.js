@@ -47,7 +47,28 @@ function requireAuth(req, res, next) {
   }
 }
 
+function requireCustomerAuth(req, res, next) {
+  requireAuth(req, res, () => {
+    const account = db.prepare(`
+      SELECT u.id
+      FROM users u
+      WHERE u.id = ? AND u.role = 'customer'
+        AND EXISTS (SELECT 1 FROM customer_portal_links l WHERE l.user_id = u.id)
+    `).get(req.user.id);
+
+    if (!account) {
+      return res.status(403).json({ error: 'Customer portal access has not been approved.' });
+    }
+
+    return next();
+  });
+}
+
 function requireWorkspaceAccess(req, res, next) {
+  if (req.user.role === 'customer' || req.user.role === 'customer_pending') {
+    return res.status(403).json({ error: 'Customer accounts cannot access workspace administration.' });
+  }
+
   const workspaceId = req.params.workspaceId || req.body.workspace_id || req.query.workspaceId;
   if (!workspaceId) {
     return res.status(400).json({ error: 'Workspace id is required.' });
@@ -80,6 +101,7 @@ module.exports = {
   verifyPassword,
   issueToken,
   requireAuth,
+  requireCustomerAuth,
   requireWorkspaceAccess,
   requireWorkspaceAdmin,
 };

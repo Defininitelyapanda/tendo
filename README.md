@@ -53,6 +53,9 @@ The interface demonstrates invoice and expense workflows, customer synchronizati
 The backend exposes authenticated workspace operations for:
 
 - registration and login
+- separate customer portal registration and login
+- owner/admin approval of customer accounts matched to customer-record email addresses
+- customer access to invoices belonging only to approved customer records
 - workspace listing and updates
 - customer create, read, update, delete
 - invoice create, read, update, delete

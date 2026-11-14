@@ -2,10 +2,11 @@ const express = require('express');
 const path = require('path');
 const crypto = require('crypto');
 const { db, dbConfig, assertWriteAllowed } = require('./db');
-const { issueToken, hashPassword, verifyPassword, requireAuth, requireWorkspaceAccess, requireWorkspaceAdmin } = require('./auth');
+const { issueToken, hashPassword, verifyPassword, requireAuth, requireCustomerAuth, requireWorkspaceAccess, requireWorkspaceAdmin } = require('./auth');
 const {
   registerSchema,
   loginSchema,
+  customerPortalRegisterSchema,
   workspaceSchema,
   customerSchema,
   invoiceSchema,
@@ -238,12 +239,113 @@ app.post('/api/auth/login', (req, res) => {
     if (!user || !verifyPassword(password, user.password_hash)) {
       return res.status(401).json({ error: 'Invalid email or password.' });
     }
+    if (user.role === 'customer' || user.role === 'customer_pending') {
+      return res.status(403).json({ error: 'Use the customer portal to sign in.' });
+    }
 
     const safeUser = { id: user.id, email: user.email, name: user.name, role: user.role };
     return res.json({ user: safeUser, token: issueToken(safeUser) });
   } catch (error) {
     return res.status(500).json({ error: 'Login failed.', details: error.message });
   }
+});
+
+app.post('/api/customer-portal/register', (req, res) => {
+  try {
+    const result = customerPortalRegisterSchema.safeParse(req.body);
+    if (!result.success) {
+      return res.status(400).json({ error: 'Invalid customer registration payload', details: result.error.flatten() });
+    }
+
+    const { name, email, password } = result.data;
+    const normalizedEmail = email.toLowerCase();
+    const existing = db.prepare('SELECT id FROM users WHERE email = ?').get(normalizedEmail);
+    if (existing) {
+      return res.status(409).json({ error: 'An account with this email already exists. Sign in or contact the workspace owner.' });
+    }
+
+    const userId = `user-${crypto.randomUUID()}`;
+    const { hash } = hashPassword(password);
+    db.prepare(`
+      INSERT INTO users (id, email, password_hash, name, role)
+      VALUES (?, ?, ?, ?, 'customer_pending')
+    `).run(userId, normalizedEmail, hash, name);
+
+    return res.status(202).json({
+      message: 'Your account is registered. A workspace owner must approve a matching customer record before you can sign in.',
+    });
+  } catch (error) {
+    return res.status(500).json({ error: 'Customer registration failed.', details: error.message });
+  }
+});
+
+app.post('/api/customer-portal/login', (req, res) => {
+  try {
+    const result = loginSchema.safeParse(req.body);
+    if (!result.success) {
+      return res.status(400).json({ error: 'Invalid login payload', details: result.error.flatten() });
+    }
+
+    const { email, password } = result.data;
+    const user = db.prepare('SELECT * FROM users WHERE email = ?').get(email.toLowerCase());
+    if (!user || !verifyPassword(password, user.password_hash)) {
+      return res.status(401).json({ error: 'Invalid email or password.' });
+    }
+    if (user.role !== 'customer') {
+      return res.status(403).json({ error: 'Your customer account is waiting for workspace owner approval.' });
+    }
+
+    const safeUser = { id: user.id, email: user.email, name: user.name, role: user.role };
+    return res.json({ user: safeUser, token: issueToken(safeUser) });
+  } catch (error) {
+    return res.status(500).json({ error: 'Customer sign-in failed.', details: error.message });
+  }
+});
+
+app.get('/api/customer-portal/profile', requireCustomerAuth, (req, res) => {
+  const businesses = db.prepare(`
+    SELECT w.id AS workspace_id, w.name AS business_name, c.id AS customer_id, c.name AS customer_name
+    FROM customer_portal_links l
+    INNER JOIN customers c ON c.id = l.customer_id AND c.workspace_id = l.workspace_id
+    INNER JOIN workspaces w ON w.id = l.workspace_id
+    WHERE l.user_id = ?
+    ORDER BY w.name, c.name
+  `).all(req.user.id);
+  const user = db.prepare('SELECT id, name, email FROM users WHERE id = ?').get(req.user.id);
+  return res.json({ user, businesses });
+});
+
+app.get('/api/customer-portal/invoices', requireCustomerAuth, (req, res) => {
+  const invoices = db.prepare(`
+    SELECT i.id, i.workspace_id, w.name AS business_name, c.name AS customer_name,
+      i.number, i.status, i.subtotal_cents, i.tax_cents, i.total_cents,
+      i.paid_cents, i.due_date, i.created_at
+    FROM invoices i
+    INNER JOIN customer_portal_links l
+      ON l.customer_id = i.customer_id AND l.workspace_id = i.workspace_id AND l.user_id = ?
+    INNER JOIN customers c ON c.id = i.customer_id AND c.workspace_id = i.workspace_id
+    INNER JOIN workspaces w ON w.id = i.workspace_id
+    WHERE i.status != 'draft'
+    ORDER BY i.created_at DESC
+  `).all(req.user.id);
+
+  const invoiceItems = db.prepare(`
+    SELECT invoice_id, description, quantity, unit_price_cents, total_cents
+    FROM invoice_items WHERE invoice_id = ? AND workspace_id = ?
+    ORDER BY created_at ASC
+  `);
+  const invoicePayments = db.prepare(`
+    SELECT id, amount_cents, method, status, created_at
+    FROM payments WHERE invoice_id = ? AND workspace_id = ?
+    ORDER BY created_at ASC
+  `);
+  return res.json({
+    invoices: invoices.map(invoice => ({
+      ...invoice,
+      items: invoiceItems.all(invoice.id, invoice.workspace_id),
+      payments: invoicePayments.all(invoice.id, invoice.workspace_id),
+    })),
+  });
 });
 
 app.get('/api/me', requireAuth, (req, res) => {
@@ -266,6 +368,9 @@ app.get('/api/workspaces', requireAuth, (req, res) => {
 });
 
 app.post('/api/workspaces', requireAuth, (req, res) => {
+  if (req.user.role === 'customer' || req.user.role === 'customer_pending') {
+    return res.status(403).json({ error: 'Customer accounts cannot create business workspaces.' });
+  }
   try {
     const parsed = workspaceSchema.safeParse(req.body);
     if (!parsed.success) {
@@ -308,6 +413,81 @@ app.get('/api/workspaces/:workspaceId/members', requireAuth, requireWorkspace, (
   return res.json({ members: rows.map(toMemberRecord) });
 });
 
+app.get('/api/workspaces/:workspaceId/customer-portal-requests', requireAuth, requireWorkspace, requireWorkspaceAdmin, (req, res) => {
+  const rows = db.prepare(`
+    SELECT u.id AS account_id, u.name AS account_name, u.email AS account_email,
+      c.id AS customer_id, c.name AS customer_name
+    FROM users u
+    INNER JOIN customers c
+      ON c.workspace_id = ? AND LOWER(c.email) = LOWER(u.email)
+    WHERE u.role IN ('customer_pending', 'customer')
+      AND NOT EXISTS (
+        SELECT 1 FROM customer_portal_links l
+        WHERE l.user_id = u.id AND l.workspace_id = c.workspace_id AND l.customer_id = c.id
+      )
+    ORDER BY u.created_at ASC, c.name ASC
+  `).all(req.params.workspaceId);
+
+  const accounts = new Map();
+  for (const row of rows) {
+    if (!accounts.has(row.account_id)) {
+      accounts.set(row.account_id, {
+        id: row.account_id,
+        name: row.account_name,
+        email: row.account_email,
+        customer_candidates: [],
+      });
+    }
+    accounts.get(row.account_id).customer_candidates.push({
+      id: row.customer_id,
+      name: row.customer_name,
+    });
+  }
+  return res.json({ accounts: [...accounts.values()] });
+});
+
+app.post('/api/workspaces/:workspaceId/customer-portal-requests/:accountId/approve', requireAuth, requireWorkspace, requireWorkspaceAdmin, (req, res) => {
+  const customerId = typeof req.body?.customer_id === 'string' ? req.body.customer_id.trim() : '';
+  if (!customerId) {
+    return res.status(400).json({ error: 'Customer id is required.' });
+  }
+
+  const account = db.prepare(`
+    SELECT id, email, role FROM users
+    WHERE id = ? AND role IN ('customer_pending', 'customer')
+  `).get(req.params.accountId);
+  const customer = db.prepare(`
+    SELECT id, name, email FROM customers
+    WHERE id = ? AND workspace_id = ? AND email IS NOT NULL AND email != ''
+  `).get(customerId, req.params.workspaceId);
+  if (!account || !customer || account.email.toLowerCase() !== customer.email.toLowerCase()) {
+    return res.status(404).json({ error: 'No matching customer account request was found.' });
+  }
+
+  const existingLink = db.prepare(`
+    SELECT 1 FROM customer_portal_links
+    WHERE user_id = ? AND workspace_id = ? AND customer_id = ?
+  `).get(account.id, req.params.workspaceId, customer.id);
+  if (existingLink) {
+    return res.status(409).json({ error: 'This customer account is already linked to that record.' });
+  }
+
+  try {
+    db.exec('BEGIN IMMEDIATE');
+    db.prepare(`
+      INSERT INTO customer_portal_links (user_id, workspace_id, customer_id)
+      VALUES (?, ?, ?)
+    `).run(account.id, req.params.workspaceId, customer.id);
+    db.prepare("UPDATE users SET role = 'customer' WHERE id = ?").run(account.id);
+    createAuditLog(req.params.workspaceId, req.user.id, 'customer_portal_access_approved', 'customer_account', account.id, { customer_id: customer.id });
+    db.exec('COMMIT');
+    return res.json({ ok: true, account_id: account.id, customer_id: customer.id });
+  } catch (error) {
+    db.exec('ROLLBACK');
+    return res.status(500).json({ error: 'Customer portal access approval failed.', details: error.message });
+  }
+});
+
 app.post('/api/workspaces/:workspaceId/members', requireAuth, requireWorkspace, requireWorkspaceAdmin, (req, res) => {
   try {
     const { email, name, role, permissions } = req.body || {};
@@ -318,6 +498,9 @@ app.post('/api/workspaces/:workspaceId/members', requireAuth, requireWorkspace, 
     const targetUser = db.prepare('SELECT * FROM users WHERE email = ?').get(email.toLowerCase());
     if (!targetUser) {
       return res.status(404).json({ error: 'User not found. Ask the person to register first or invite them via the app onboarding flow.' });
+    }
+    if (targetUser.role === 'customer' || targetUser.role === 'customer_pending') {
+      return res.status(400).json({ error: 'Customer portal accounts cannot be added as workspace team members.' });
     }
 
     const existingMembership = db.prepare('SELECT 1 FROM workspace_members WHERE user_id = ? AND workspace_id = ?').get(targetUser.id, req.params.workspaceId);
