@@ -15,7 +15,7 @@
   },
   "build": {
     "appId": "com.tendo.desktop",
-    "productName": "TENDO Prototype",
+    "productName": "TENDO",
     "directories": {
       "output": "dist"
     },
@@ -41,7 +41,7 @@
       "target": "nsis",
       "icon": "assets/tendo.ico",
       "signExecutable": false,
-      "artifactName": "TENDO-Windows-Prototype-Setup-${version}.${ext}"
+      "artifactName": "TENDO-Windows-Setup-${version}.${ext}"
     },
     "nsis": {
       "oneClick": false,
@@ -50,7 +50,7 @@
       "uninstallerIcon": "assets/tendo.ico",
       "createDesktopShortcut": true,
       "createStartMenuShortcut": true,
-      "shortcutName": "TENDO Prototype",
+      "shortcutName": "TENDO",
       "deleteAppDataOnUninstall": false
     }
   }

@@ -10,7 +10,7 @@ function createWindow() {
     minHeight: 600,
     backgroundColor: '#0f172a',
     autoHideMenuBar: true,
-    title: 'TENDO Prototype',
+    title: 'TENDO Production',
     webPreferences: {
       contextIsolation: true,
       nodeIntegration: false,
@@ -22,8 +22,8 @@ function createWindow() {
     ? path.join(process.resourcesPath, 'web', 'index.html')
     : path.join(__dirname, '..', 'index.html');
   win.loadURL(pathToFileURL(entryPoint).href).catch(error => {
-    console.error('Unable to load the TENDO prototype interface.', error);
-    dialog.showErrorBox('TENDO Prototype could not start', 'The application interface could not be loaded.');
+    console.error('Unable to load the TENDO production interface.', error);
+    dialog.showErrorBox('TENDO could not start', 'The application interface could not be loaded.');
   });
 
   win.webContents.setWindowOpenHandler(({ url }) => {

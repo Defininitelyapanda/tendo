@@ -83,12 +83,12 @@ const startServer = portIndex => {
       startServer(portIndex + 1);
       return;
     }
-    console.error(`Failed to start TENDO prototype on port ${port}:`, error.message);
+    console.error(`Failed to start TENDO production server on port ${port}:`, error.message);
     process.exit(1);
   });
 
   server.listen(port, () => {
-    console.log(`TENDO prototype running at http://localhost:${port}`);
+    console.log(`TENDO production workspace running at http://localhost:${port}`);
   });
 };
 

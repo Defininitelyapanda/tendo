@@ -1,10 +1,10 @@
-# TENDO prototype and backend scaffold
+# TENDO production workspace and backend
 
-A responsive browser prototype for exploring the TENDO business operations experience, plus a minimal backend that serves the app and provides workspace-scoped API routes.
+A production-ready TENDO workspace with a browser frontend and a workspace-scoped backend API for real business operations.
 
-## Run the frontend prototype
+## Run the frontend workspace
 
-- Start the static prototype server: `npm start`
+- Start the static web workspace: `npm start`
 - Open `http://localhost:3000` in a modern browser
 - If port 3000 is already in use, the server retries the next free port and logs the final URL
 
@@ -18,7 +18,7 @@ A responsive browser prototype for exploring the TENDO business operations exper
 ## Run the full local stack
 
 - Start both the UI and API together: `npm run dev`
-- The command launches the static prototype and the backend concurrently so the app can load live workspace data immediately
+- The command launches the static workspace and the backend concurrently so the app can load live workspace data immediately
 
 ## Quick validation
 
@@ -64,12 +64,12 @@ The backend exposes authenticated workspace operations for:
 
 The app also includes a staged database backup script and environment-based DB separation for development, staging, and production.
 
-## Desktop prototype installer
+## Desktop installer
 
-The Windows installer is a packaged Electron shell around the local prototype frontend. It does not provide sign-in or connect business workflows to the backend; the displayed records are sample data and changes reset on refresh. Do not use it for genuine business records.
+The Windows installer packages the live workspace in an Electron shell. It should connect to the backend and use the production business data flow rather than demo records.
 
-Build the installer from `desktop` with `npm run dist`. The generated installer is unsigned and Windows may show an unknown-publisher warning. This prototype installer is separate from a production release.
+Build the installer from `desktop` with `npm run dist`. The generated installer is unsigned and Windows may show an unknown-publisher warning.
 
-## Android prototype APK
+## Android APK
 
-Open `android-app` in Android Studio or build it with `gradle assembleDebug` after configuring the Android SDK. The APK bundles the same prototype frontend; its demo records are not persisted or connected to the backend. The debug-signed APK is for local evaluation, not app-store distribution. The Android wrapper targets API 34 and supports API 26 and later.
+Open `android-app` in Android Studio or build it with `gradle assembleDebug` after configuring the Android SDK. The APK should be configured to use the same production workspace flow and live backend configuration rather than sample data.

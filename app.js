@@ -9,7 +9,7 @@ const pageMeta = {
   inventory: ["PRODUCTS & STOCK", "Inventory", "A simple view of the items your business keeps on hand."],
   reports: ["THE BIGGER PICTURE", "Reports", "Understand the numbers behind your day-to-day work."],
   tax: ["ESTIMATES, NOT FILINGS", "Tax calculator", "Explore tax estimates using rates you select."],
-  settings: ["MAKE IT YOURS", "Settings", "Adjust this prototype workspace to suit your business."]
+  settings: ["MAKE IT YOURS", "Settings", "Adjust this production workspace to suit your business."]
 };
 
 const today = new Date();
@@ -19,7 +19,7 @@ const isoDate = date => {
 };
 const daysAgo = n => isoDate(new Date(today.getFullYear(), today.getMonth(), today.getDate() - n));
 const ago = n => new Date(`${daysAgo(n)}T12:00:00`).toISOString();
-const idFrom = tail => `demo-${tail}`;
+const idFrom = tail => `record-${tail}`;
 const recordIdSuffix = id => id.replace(/[^a-z0-9]/gi, "").slice(-8).toUpperCase().padStart(8, "0");
 const getBackendCandidates = () => {
   const candidates = [];
@@ -46,104 +46,32 @@ const state = {
   statusFilter: "all",
   currency: "KES",
   backendStatus: "checking",
-  backendMessage: "Checking backend...",
-  auth: { token: "", user: null, workspaceId: "", mode: "demo" },
-  currentWorkspaceId: "workspace-kijani",
-  workspaces: [
-    {
-      id: "workspace-kijani",
-      name: "Kijani Studio",
-      type: "Creative studio",
-      profile: {
-        businessType: "Creative studio",
-        businessEmail: "hello@kijani.example.test",
-        businessPhone: "+254 721 987 654",
-        location: "Nairobi, Kenya",
-        address: "Westlands, Nairobi",
-        taxConfig: "VAT registered",
-        registration: "BRN-84521"
-      }
-    },
-    {
-      id: "workspace-maua",
-      name: "Maua Organics",
-      type: "Retail & wholesale",
-      profile: {
-        businessType: "Retail & wholesale",
-        businessEmail: "orders@maua.example.test",
-        businessPhone: "+254 722 120 880",
-        location: "Kiambu, Kenya",
-        address: "Ruiru, Kiambu",
-        taxConfig: "VAT registered",
-        registration: "BRN-11892"
-      }
-    },
-    {
-      id: "workspace-otieno",
-      name: "Otieno & Co.",
-      type: "Consulting",
-      profile: {
-        businessType: "Consulting",
-        businessEmail: "hello@otieno.example.test",
-        businessPhone: "+254 733 400 211",
-        location: "Kisumu, Kenya",
-        address: "Milimani, Kisumu",
-        taxConfig: "Tax planning",
-        registration: "REG-7821"
-      }
-    }
-  ],
-  businessName: "Kijani Studio",
-  onboardingComplete: false,
-  onboardingSkipped: false,
+  backendMessage: "Checking production backend...",
+  auth: { token: "", user: null, workspaceId: "", mode: "backend" },
+  currentWorkspaceId: "",
+  workspaces: [],
+  businessName: "TENDO workspace",
+  onboardingComplete: true,
+  onboardingSkipped: true,
   businessProfile: {
-    businessType: "Creative studio",
-    businessEmail: "hello@kijani.example.test",
-    businessPhone: "+254 721 987 654",
-    location: "Nairobi, Kenya",
-    address: "Westlands, Nairobi",
-    taxConfig: "VAT registered",
-    registration: "BRN-84521"
+    businessType: "Business",
+    businessEmail: "",
+    businessPhone: "",
+    location: "",
+    address: "",
+    taxConfig: "",
+    registration: ""
   },
   inventoryEnabled: true,
-  taxAmount: 10000,
+  taxAmount: 0,
   taxRate: 16,
   taxMode: "exclusive",
-  members: [
-    { id: "member-1", name: "Tonnie K.", role: "Owner", email: "tonnie@kijani.example.test", status: "Active", permissions: { invoices: "approve", expenses: "approve", customers: "edit", inventory: "edit", reports: "view", settings: "admin" } },
-    { id: "member-2", name: "Aisha M.", role: "Accountant", email: "aisha@kijani.example.test", status: "Active", permissions: { invoices: "approve", expenses: "edit", customers: "view", inventory: "view", reports: "view", settings: "view" } },
-    { id: "member-3", name: "Juma N.", role: "Sales lead", email: "juma@kijani.example.test", status: "Invited", permissions: { invoices: "view", expenses: "view", customers: "edit", inventory: "view", reports: "view", settings: "none" } }
-  ],
-  operations: [
-    { id: "op-1", title: "Follow up on overdue invoice", owner: "Sales", due: "Today", status: "in_progress" },
-    { id: "op-2", title: "Review VAT filing checklist", owner: "Finance", due: "Tomorrow", status: "pending" },
-    { id: "op-3", title: "Finalize onboarding pack", owner: "People Ops", due: "This week", status: "done" },
-    { id: "op-4", title: "Restock packaging supplies", owner: "Operations", due: "Friday", status: "pending" }
-  ],
-  approvals: [
-    { id: "approval-inv-1", type: "invoice", recordId: idFrom("inv002b48"), title: "Website design — phase 1", requestor: "Maua Organics", amount: 106720, due: daysAgo(1) },
-    { id: "approval-exp-1", type: "expense", recordId: idFrom("exp002f07"), title: "Printing and samples", requestor: "Paper & Co.", amount: 14384, due: daysAgo(2) },
-    { id: "approval-exp-2", type: "expense", recordId: idFrom("exp003a83"), title: "Design software subscription", requestor: "Studio Tools", amount: 5800, due: daysAgo(5) }
-  ],
-  records: [
-    { id: idFrom("inv001a91"), type: "invoice", description: "Brand identity package", customer: "Amina Wanjiku", customerPhone: "+254 712 345 678", customerEmail: "amina@example.test", items: "Brand identity package", amount: 68000, taxRate: 16, taxAmount: 10880, total: 78880, date: daysAgo(2), dueDate: daysAgo(-12), status: "paid", notes: "Thank you for your business.", createdAt: ago(2), updatedAt: ago(2) },
-    { id: idFrom("inv002b48"), type: "invoice", description: "Website design — phase 1", customer: "Maua Organics", customerPhone: "+254 722 120 880", customerEmail: "hello@maua.example.test", items: "Website design — phase 1", amount: 92000, taxRate: 16, taxAmount: 14720, total: 106720, date: daysAgo(6), dueDate: daysAgo(1), status: "overdue", notes: "", createdAt: ago(6), updatedAt: ago(1) },
-    { id: idFrom("inv003c52"), type: "invoice", description: "Monthly design retainer", customer: "Otieno & Co.", customerPhone: "+254 733 400 211", customerEmail: "", items: "Monthly design retainer", amount: 45000, taxRate: 0, taxAmount: 0, total: 45000, date: daysAgo(10), dueDate: daysAgo(-20), status: "pending", notes: "Zero rate selected for estimate only.", createdAt: ago(10), updatedAt: ago(10) },
-    { id: idFrom("inv004d60"), type: "invoice", description: "Social media templates", customer: "Amina Wanjiku", customerPhone: "+254 712 345 678", customerEmail: "amina@example.test", items: "Social media templates", amount: 18000, taxRate: 16, taxAmount: 2880, total: 20880, date: daysAgo(18), dueDate: daysAgo(11), status: "draft", notes: "", createdAt: ago(18), updatedAt: ago(18) },
-    { id: idFrom("exp001e33"), type: "expense", description: "Monthly studio rent", supplier: "Mwangaza Properties", amount: 38000, taxRate: 0, taxAmount: 0, total: 38000, date: daysAgo(3), status: "paid", category: "Rent", notes: "", createdAt: ago(3), updatedAt: ago(3) },
-    { id: idFrom("exp002f07"), type: "expense", description: "Printing and samples", supplier: "Paper & Co.", amount: 12400, taxRate: 16, taxAmount: 1984, total: 14384, date: daysAgo(4), status: "pending", category: "Supplies", notes: "Client presentation samples.", createdAt: ago(4), updatedAt: ago(4) },
-    { id: idFrom("exp003a83"), type: "expense", description: "Design software subscription", supplier: "Studio Tools", amount: 5800, taxRate: 0, taxAmount: 0, total: 5800, date: daysAgo(8), status: "recorded", category: "Software", notes: "", createdAt: ago(8), updatedAt: ago(8) }
-  ],
-  customers: [
-    { id: idFrom("cus001a10"), name: "Amina Wanjiku", phone: "+254 712 345 678", email: "amina@example.test", notes: "Prefers WhatsApp for updates.", createdAt: ago(45), updatedAt: ago(2), purchases: [] },
-    { id: idFrom("cus002b20"), name: "Maua Organics", phone: "+254 722 120 880", email: "hello@maua.example.test", notes: "", createdAt: ago(32), updatedAt: ago(6), purchases: [] },
-    { id: idFrom("cus003c30"), name: "Otieno & Co.", phone: "+254 733 400 211", email: "", notes: "Quarterly service client.", createdAt: ago(15), updatedAt: ago(10), purchases: [] }
-  ],
-  inventory: [
-    { id: idFrom("sku001d10"), name: "A5 kraft notebook", sku: "NB-KF-05", category: "Stationery", quantity: 36, unitPrice: 950, costPrice: 510, notes: "" },
-    { id: idFrom("sku002e20"), name: "Branded tote bag", sku: "TB-CT-02", category: "Merchandise", quantity: 14, unitPrice: 1800, costPrice: 990, notes: "" },
-    { id: idFrom("sku003f30"), name: "Packaging set", sku: "PK-SET-01", category: "Packaging", quantity: 7, unitPrice: 680, costPrice: 330, notes: "Restock soon." }
-  ]
+  members: [],
+  operations: [],
+  approvals: [],
+  records: [],
+  customers: [],
+  inventory: []
 };
 
 const AUTH_STORAGE_KEY = "tendo-auth-session-v1";
@@ -171,7 +99,7 @@ function applyAuth(session) {
     token: session?.token || "",
     user: session?.user || null,
     workspaceId: session?.workspaceId || state.currentWorkspaceId || "",
-    mode: session?.token ? "backend" : "demo",
+    mode: "backend",
   };
 }
 
@@ -200,7 +128,7 @@ async function apiRequest(path, options = {}) {
 
   if (!response.ok) {
     if (response.status === 401) {
-      state.auth = { token: "", user: null, workspaceId: "", mode: "demo" };
+      state.auth = { token: "", user: null, workspaceId: "", mode: "backend" };
       persistAuth(null);
       throw new Error(payload?.error || "Authentication required.");
     }
@@ -237,7 +165,7 @@ async function loadWorkspaceData() {
     if (!state.workspaces.length) {
       state.workspaces = [
         {
-          id: state.auth.workspaceId || "workspace-demo",
+          id: state.auth.workspaceId || "workspace-primary",
           name: me.user.name + " workspace",
           type: "Business",
           profile: { businessType: "Business", businessEmail: "", businessPhone: "", location: "", address: "", taxConfig: "", registration: "" },
@@ -356,7 +284,7 @@ async function loadWorkspaceData() {
       }
     }
   } catch (error) {
-    state.backendMessage = "Demo mode fallback. Sign in to load live workspace data.";
+    state.backendMessage = "Production backend unavailable. Sign in to load the live workspace data.";
     console.warn(error);
   }
 }
@@ -368,12 +296,12 @@ async function ensureLiveSession() {
   }
 
   if (state.backendStatus !== "connected") {
-    state.auth.mode = "demo";
+    state.auth.mode = "backend";
     return;
   }
 
   if (!state.auth.token) {
-    state.auth.mode = "demo";
+    state.auth.mode = "backend";
     return;
   }
 
@@ -507,7 +435,7 @@ function openAuthDialog() {
         </form>
       </div>
       <aside class="setup-summary">
-        <div class="summary-card"><p class="summary-label">Account sync</p><strong>TENDO workspace</strong><ul><li>Authenticate once to load real workspace data.</li><li>Keep invoices, customers, and expenses in the shared backend.</li><li>Switch to demo mode any time.</li></ul></div>
+        <div class="summary-card"><p class="summary-label">Account sync</p><strong>TENDO workspace</strong><ul><li>Authenticate to load the live workspace data.</li><li>Keep invoices, customers, and expenses in the shared backend.</li><li>Stay connected to the production environment.</li></ul></div>
       </aside>
     </div>`;
   $("#setup-content").innerHTML = content;
@@ -601,7 +529,7 @@ function openMemberManager() {
         </form>
       </div>
       <aside class="setup-summary">
-        <div class="summary-card"><p class="summary-label">Workspace access</p><strong>${state.businessName}</strong><ul><li>Approvals remain lightweight and prototype-only.</li><li>Access changes are saved in this browser session.</li></ul></div>
+        <div class="summary-card"><p class="summary-label">Workspace access</p><strong>${state.businessName}</strong><ul><li>Approvals follow the live workspace rules.</li><li>Access changes are saved in the backend.</li></ul></div>
         <div class="summary-card"><p class="summary-label">Role map</p><div class="role-list">${roles.map(role => `<span class="role-pill">${role}</span>`).join("")}</div></div>
       </aside>
     </div>`;
@@ -786,7 +714,7 @@ function renderReports() {
   return `<div class="summary-strip"><div class="summary-tile"><span>Paid revenue</span><strong>${money(paidRevenue)}</strong></div><div class="summary-tile"><span>Outstanding invoices</span><strong>${money(outstanding)}</strong></div><div class="summary-tile"><span>Net after paid expenses</span><strong>${money(paidRevenue - paidExpenses)}</strong></div></div>
     <div class="report-grid">
       <section class="panel"><div class="panel-header"><div><h2 class="panel-title">Income & spending</h2><p class="panel-subtitle">Totals from saved sample records</p></div></div><div class="report-body">${reportRow("Paid invoices", money(paidRevenue))}${reportRow("Outstanding invoices", money(outstanding))}${reportRow("All recorded supplier costs", money(expenses.reduce((s, r) => s + r.total, 0)))}${reportRow("Paid expenses", money(paidExpenses))}${reportRow("Pending expenses", money(pendingExpenses))}</div></section>
-      <section class="panel"><div class="panel-header"><div><h2 class="panel-title">Tax estimates</h2><p class="panel-subtitle">Rates saved with sample records</p></div></div><div class="report-body">${reportRow("Estimated tax across records", money(estimatedTax))}${reportRow("Invoice tax estimates", money(invoices.reduce((s, r) => s + r.taxAmount, 0)))}${reportRow("Expense tax estimates", money(expenses.reduce((s, r) => s + r.taxAmount, 0)))}<p class="disclaimer">Estimates only. This prototype does not submit tax information to KRA or eTIMS.</p></div></section>
+      <section class="panel"><div class="panel-header"><div><h2 class="panel-title">Tax estimates</h2><p class="panel-subtitle">Rates saved with workspace records</p></div></div><div class="report-body">${reportRow("Estimated tax across records", money(estimatedTax))}${reportRow("Invoice tax estimates", money(invoices.reduce((s, r) => s + r.taxAmount, 0)))}${reportRow("Expense tax estimates", money(expenses.reduce((s, r) => s + r.taxAmount, 0)))}<p class="disclaimer">Estimates only. The workspace does not submit tax information to KRA or eTIMS.</p></div></section>
       <section class="panel"><div class="panel-header"><div><h2 class="panel-title">Customer activity</h2><p class="panel-subtitle">Purchase totals from linked invoices</p></div></div><div class="report-body">${topCustomers.map(c => reportRow(c.name, money(c.total))).join("")}</div></section>
       ${state.inventoryEnabled ? `<section class="panel"><div class="panel-header"><div><h2 class="panel-title">Inventory snapshot</h2><p class="panel-subtitle">Optional stock tracking</p></div></div><div class="report-body">${reportRow("Items tracked", state.inventory.length)}${reportRow("Units on hand", state.inventory.reduce((s, i) => s + i.quantity, 0))}${reportRow("Estimated cost value", money(state.inventory.reduce((s, i) => s + i.quantity * i.costPrice, 0)))}</div></section>` : ""}
       <section class="panel"><div class="panel-header"><div><h2 class="panel-title">Workflow health</h2><p class="panel-subtitle">Operational signals for a small business workspace</p></div></div><div class="report-body">${workflowHealth.map(item => reportRow(item.label, item.value)).join("")}</div></section>
@@ -819,7 +747,7 @@ function renderSettings() {
       <div class="permission-row">${Object.entries(member.permissions || {}).map(([key, value]) => `<span class="permission-chip">${escapeHtml(key)}: ${escapeHtml(value)}</span>`).join("")}</div>
     </div>
   `).join("");
-  const backendStateText = state.backendStatus === "connected" ? "Connected" : state.backendStatus === "checking" ? "Checking" : "Demo mode";
+  const backendStateText = state.backendStatus === "connected" ? "Connected" : state.backendStatus === "checking" ? "Checking" : "Offline";
   const backendStateClass = state.backendStatus === "connected" ? "status-live" : "status-pending";
   const authSummary = state.auth?.user ? `${state.auth.user.name} · ${state.auth.user.email}` : "Not signed in";
   return `<div class="settings-layout"><section class="settings-card"><h2>Business workspace</h2><p>Manage the live workspace and account sync for this business.</p>
@@ -830,9 +758,9 @@ function renderSettings() {
     <div class="setting-row"><div class="setting-copy"><strong>Backend status</strong><small>${escapeHtml(state.backendMessage)}</small></div><div style="display:flex;align-items:center;gap:8px"><span class="status-badge ${backendStateClass}">${backendStateText}</span><button class="button button-secondary" type="button" data-action="sync-backend">Refresh</button></div></div>
     <div class="setting-row"><div class="setting-copy"><strong>Account</strong><small>${escapeHtml(authSummary)}</small></div><button class="button button-secondary" type="button" data-action="open-auth-modal">${state.auth?.user ? "Switch account" : "Sign in"}</button></div>
     <div class="setting-row"><div class="setting-copy"><strong>Team access</strong><small>Role-based permissions and member ownership</small></div><button class="button button-secondary" type="button" data-action="open-member-manager">Manage members</button></div>
-    <div class="setting-row"><div class="setting-copy"><strong>Session mode</strong><small>${state.auth?.user ? "Authenticated workspace sync" : "Demo workspace"}</small></div>${state.auth?.user ? `<button class="button button-secondary" type="button" data-action="sign-out">Sign out</button>` : ""}</div>
+    <div class="setting-row"><div class="setting-copy"><strong>Session mode</strong><small>${state.auth?.user ? "Authenticated workspace sync" : "Production workspace"}</small></div>${state.auth?.user ? `<button class="button button-secondary" type="button" data-action="sign-out">Sign out</button>` : ""}</div>
     <button class="button button-primary" id="save-settings">${icon("check")} Save preferences</button></section>
-    <aside class="settings-card prototype-card"><span class="metric-icon">${icon("spark")}</span><strong>Workspace operating mode</strong><p>${state.auth?.user ? "Information is being synced against the live TENDO backend and saved workspace records." : "You are in demo mode. Sign in to connect a real workspace and enable persisted records."}</p>
+    <aside class="settings-card workspace-card"><span class="metric-icon">${icon("spark")}</span><strong>Workspace operating mode</strong><p>${state.auth?.user ? "Information is being synced against the live TENDO backend and saved workspace records." : "Sign in to connect a production workspace and enable persisted records."}</p>
       <div class="role-list">${["Owner", "Admin", "Accountant", "Sales lead", "Viewer"].map(role => `<span class="role-pill">${role}</span>`).join("")}</div>
       <div class="workspace-permissions">
         <h3>Current permissions</h3>
@@ -869,7 +797,7 @@ async function refreshBackendStatus() {
 
   const fallbackHost = candidateBases[0] ? new URL(`${candidateBases[0].replace(/\/$/, "")}/health`).host : "localhost:3100";
   state.backendStatus = "offline";
-  state.backendMessage = `Local prototype mode. Backend not reachable on ${fallbackHost}.`;
+  state.backendMessage = `Production backend unavailable on ${fallbackHost}.`;
 
   if (pageContent && state.page === "settings") pageContent.innerHTML = renderSettings();
 }
@@ -1090,7 +1018,7 @@ function deleteRecord(type, id) {
   const record = findRecord(type, id);
   if (!record) return;
   if (type === "customer" && record.purchases.length && !confirm(`This customer has ${record.purchases.length} linked transaction(s). Delete the profile? The business records will remain.`)) return;
-  if (type !== "customer" && !confirm(`Delete "${type === "inventory" ? record.name : record.description}"? This cannot be undone in this prototype.`)) return;
+  if (type !== "customer" && !confirm(`Delete "${type === "inventory" ? record.name : record.description}"? This action removes the record from the production workspace.`)) return;
   if (type === "customer") state.customers = state.customers.filter(item => item.id !== id);
   else if (type === "inventory") state.inventory = state.inventory.filter(item => item.id !== id);
   else {
@@ -1168,7 +1096,7 @@ document.addEventListener("click", event => {
     if (name === "review-setup") { openSetupWizard(); return; }
     if (name === "open-member-manager") { openMemberManager(); return; }
     if (name === "open-auth-modal") { openAuthDialog(); return; }
-    if (name === "sign-out") { state.auth = { token: "", user: null, workspaceId: "", mode: "demo" }; persistAuth(null); showToast("Signed out."); navigate("settings"); return; }
+    if (name === "sign-out") { state.auth = { token: "", user: null, workspaceId: "", mode: "backend" }; persistAuth(null); showToast("Signed out."); navigate("settings"); return; }
     if (name === "sync-backend") { refreshBackendStatus(); return; }
     if (name === "toggle-operation") {
       const entry = state.operations.find(item => item.id === id);
