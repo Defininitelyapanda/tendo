@@ -53,9 +53,7 @@ The interface demonstrates invoice and expense workflows, customer synchronizati
 The backend exposes authenticated workspace operations for:
 
 - registration and login
-- separate customer portal registration and login
-- owner/admin approval of customer accounts matched to customer-record email addresses
-- customer access to invoices belonging only to approved customer records
+- team-member and administrator access to their assigned workspaces
 - workspace listing and updates
 - customer create, read, update, delete
 - invoice create, read, update, delete
@@ -64,6 +62,8 @@ The backend exposes authenticated workspace operations for:
 - inventory create, read, update, delete
 - dashboard and summary analytics
 - audit logging for workspace actions
+
+The workspace switcher lists workspaces and team accounts available to the signed-in user. Selecting a team account opens the regular team login with that account's email prefilled; a password is still required. Signed-out users can sign in or explicitly create a new team account from the workspace switcher.
 
 The app also includes a staged database backup script and environment-based DB separation for development, staging, and production.
 

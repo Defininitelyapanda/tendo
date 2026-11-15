@@ -240,7 +240,7 @@ app.post('/api/auth/login', (req, res) => {
       return res.status(401).json({ error: 'Invalid email or password.' });
     }
     if (user.role === 'customer' || user.role === 'customer_pending') {
-      return res.status(403).json({ error: 'Use the customer portal to sign in.' });
+      return res.status(403).json({ error: 'This account cannot access a business workspace.' });
     }
 
     const safeUser = { id: user.id, email: user.email, name: user.name, role: user.role };

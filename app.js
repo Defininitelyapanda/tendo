@@ -48,9 +48,7 @@ const state = {
   backendStatus: "checking",
   backendMessage: "Checking production backend...",
   auth: { token: "", user: null, workspaceId: "", mode: "backend" },
-  canManageCustomerAccess: false,
-  customerAccessRequests: [],
-  customerPortal: { token: "", user: null, businesses: [], invoices: [], mode: "login", message: "" },
+  authPromptMode: "login",
   currentWorkspaceId: "",
   workspaces: [],
   businessName: "TENDO workspace",
@@ -144,36 +142,21 @@ async function apiRequest(path, options = {}) {
   return payload;
 }
 
-async function customerPortalRequest(path, token, options = {}) {
-  const baseUrl = getBackendCandidates()[0] || "http://localhost:3100";
-  const response = await fetch(`${baseUrl.replace(/\/$/, "")}${path}`, {
-    cache: "no-store",
-    ...options,
-    headers: {
-      "Content-Type": "application/json",
-      ...(token ? { Authorization: `Bearer ${token}` } : {}),
-      ...(options.headers || {}),
-    },
-    ...(options.body && typeof options.body !== "string" ? { body: JSON.stringify(options.body) } : {}),
-  });
-  const text = await response.text();
-  const payload = text ? (() => { try { return JSON.parse(text); } catch (error) { return text; } })() : null;
-  if (!response.ok) throw new Error(payload?.error || `Request failed (${response.status}).`);
-  return payload;
-}
-
 function updateAccountDisplay() {
   const user = state.auth.user;
   const initials = user?.name ? user.name.split(/\s+/).map(part => part[0]).slice(0, 2).join("").toUpperCase() : "—";
   const role = user?.role || "Not signed in";
+  const roleLabel = role === "owner" ? "Workspace owner" : role === "admin" ? "Workspace administrator" : user ? "Workspace member" : "Sign in to your workspace";
   const avatar = document.getElementById("profile-avatar");
   const profileName = document.getElementById("profile-name");
   const profileRole = document.getElementById("profile-role");
   const signOutButton = document.getElementById("header-sign-out");
+  const accountButton = document.getElementById("header-team-account");
   if (avatar) avatar.textContent = initials;
   if (profileName) profileName.textContent = user?.name || "Not signed in";
-  if (profileRole) profileRole.textContent = role === "owner" ? "Workspace owner" : user ? "Workspace member" : "Sign in to your workspace";
+  if (profileRole) profileRole.textContent = roleLabel;
   if (signOutButton) signOutButton.hidden = !user;
+  if (accountButton) accountButton.textContent = user ? "Switch account" : "Team sign in";
 }
 
 async function loadWorkspaceData() {
@@ -231,10 +214,7 @@ async function loadWorkspaceData() {
         },
       }));
 
-      state.members = backendMembers.length ? backendMembers : state.members;
-      state.canManageCustomerAccess = me.user.role === "admin"
-        || backendMembers.some(member => member.id === me.user.id && ["owner", "admin"].includes(member.role));
-
+      state.members = backendMembers;
       const backendCustomers = (customers.customers || []).map(customer => ({
         id: customer.id,
         name: customer.name,
@@ -312,11 +292,6 @@ async function loadWorkspaceData() {
       if (Array.isArray(summary.recent_invoices)) {
         state.records = [...backendInvoices, ...backendExpenses];
       }
-      state.customerAccessRequests = [];
-      if (state.canManageCustomerAccess) {
-        const accessRequests = await apiRequest(`/api/workspaces/${selectedWorkspaceId}/customer-portal-requests`);
-        state.customerAccessRequests = accessRequests.accounts || [];
-      }
       if (state.page === "settings") {
         $("#page-content").innerHTML = renderSettings();
       }
@@ -371,7 +346,11 @@ const syncCurrentWorkspace = () => {
   state.businessName = workspace.name;
   state.businessProfile = { ...workspace.profile };
 };
-const renderWorkspaceMenu = () => state.workspaces.map(workspace => `<button class="workspace-option ${workspace.id === state.currentWorkspaceId ? "active" : ""}" type="button" data-workspace-id="${workspace.id}"><span class="workspace-option-avatar">${workspace.name.slice(0, 2).toUpperCase()}</span><span class="workspace-option-copy"><strong>${escapeHtml(workspace.name)}</strong><small>${escapeHtml(workspace.type)}</small></span>${workspace.id === state.currentWorkspaceId ? '<span class="workspace-check">✓</span>' : ''}</button>`).join("");
+const renderWorkspaceMenu = () => {
+  const workspaces = state.workspaces.map(workspace => `<button class="workspace-option ${workspace.id === state.currentWorkspaceId ? "active" : ""}" type="button" data-workspace-id="${escapeHtml(workspace.id)}"><span class="workspace-option-avatar">${escapeHtml(workspace.name.slice(0, 2).toUpperCase())}</span><span class="workspace-option-copy"><strong>${escapeHtml(workspace.name)}</strong><small>${escapeHtml(workspace.type)}</small></span>${workspace.id === state.currentWorkspaceId ? '<span class="workspace-check">✓</span>' : ''}</button>`).join("");
+  const members = state.members.map(member => `<button class="workspace-option account-option" type="button" data-team-account="${escapeHtml(member.email)}"><span class="workspace-option-avatar">${escapeHtml(member.name.split(/\s+/).map(part => part[0]).slice(0, 2).join("").toUpperCase())}</span><span class="workspace-option-copy"><strong>${escapeHtml(member.name)}</strong><small>${escapeHtml(member.role.charAt(0).toUpperCase() + member.role.slice(1))} · Sign in to switch</small></span></button>`).join("");
+  return `${workspaces ? `<p class="workspace-menu-label">Workspaces</p>${workspaces}` : ""}${members ? `<p class="workspace-menu-label">Team accounts</p>${members}` : ""}<button class="workspace-option workspace-login-option" type="button" data-action="open-auth-modal"><span class="workspace-option-copy"><strong>${state.auth.user ? "Sign in to another account" : "Team / enterprise sign in"}</strong><small>Log in or create a team account</small></span></button>`;
+};
 
 for (const record of state.records) {
   record.documentNumber = docNumber(record);
@@ -463,76 +442,31 @@ function renderOnboardingCard() {
   </form></section>`;
 }
 
-function openAuthDialog() {
-  const authMode = state.auth?.user ? "Account" : "Sign in";
+function openAuthDialog(mode = "login", email = "") {
+  state.authPromptMode = mode;
+  const registering = mode === "register";
   const content = `
     <div class="setup-form-shell">
       <div class="setup-form-body">
         <form id="auth-form" class="setup-form">
-          <div class="dialog-header"><div><h2 id="setup-title">${authMode}</h2><p>Use your TENDO workspace account or create one instantly.</p></div><button type="button" class="icon-button" data-action="close-setup" aria-label="Close account prompt">${icon("close")}</button></div>
-          <div class="setup-grid">
-            <div class="form-field full"><label for="auth-name">Full name</label><input class="form-control" id="auth-name" name="name" value="${escapeHtml(state.auth?.user?.name || "")}" placeholder="Your name"></div>
-            <div class="form-field full"><label for="auth-email">Email</label><input class="form-control" id="auth-email" name="email" type="email" placeholder="you@company.com" required></div>
-            <div class="form-field full"><label for="auth-password">Password</label><input class="form-control" id="auth-password" name="password" type="password" minLength="8" placeholder="At least 8 characters" required></div>
+          <div class="dialog-header"><div><h2 id="setup-title">${registering ? "Create team account" : "Team / enterprise sign in"}</h2><p>Sign in with a team member or administrator account to open its workspace dashboard.</p></div><button type="button" class="icon-button" data-action="close-setup" aria-label="Close account prompt">${icon("close")}</button></div>
+          <div class="auth-mode-switch" aria-label="Account action">
+            <button type="button" class="${registering ? "" : "active"}" data-action="auth-switch-login" aria-pressed="${!registering}">Sign in</button>
+            <button type="button" class="${registering ? "active" : ""}" data-action="auth-switch-register" aria-pressed="${registering}">Create account</button>
           </div>
-          <div class="dialog-footer setup-footer"><button type="button" class="button button-secondary" data-action="close-setup">Cancel</button><button type="submit" class="button button-primary">${state.auth?.user ? "Save account" : "Continue"}</button></div>
+          <div class="setup-grid">
+            ${registering ? `<div class="form-field full"><label for="auth-name">Full name</label><input class="form-control" id="auth-name" name="name" autocomplete="name" placeholder="Your name" required minlength="2"></div>` : ""}
+            <div class="form-field full"><label for="auth-email">Team account email</label><input class="form-control" id="auth-email" name="email" type="email" autocomplete="username" value="${escapeHtml(email)}" placeholder="you@company.com" required></div>
+            <div class="form-field full"><label for="auth-password">Password</label><input class="form-control" id="auth-password" name="password" type="password" autocomplete="${registering ? "new-password" : "current-password"}" minlength="8" placeholder="${registering ? "At least 8 characters" : "Your account password"}" required></div>
+          </div>
+          <div class="dialog-footer setup-footer"><button type="button" class="button button-secondary" data-action="close-setup">Cancel</button><button type="submit" class="button button-primary">${registering ? "Create team account" : "Sign in"}</button></div>
         </form>
       </div>
       <aside class="setup-summary">
-        <div class="summary-card"><p class="summary-label">Account sync</p><strong>TENDO workspace</strong><ul><li>Authenticate to load the live workspace data.</li><li>Keep invoices, customers, and expenses in the shared backend.</li><li>Stay connected to the production environment.</li></ul></div>
+        <div class="summary-card"><p class="summary-label">Team access</p><strong>Private business workspace</strong><ul><li>Each team member signs in with their own account.</li><li>Owners and admins keep their assigned permissions.</li><li>New accounts start with a private workspace dashboard.</li></ul></div>
       </aside>
     </div>`;
   $("#setup-content").innerHTML = content;
-  $("#setup-dialog").showModal();
-}
-
-function renderCustomerPortalDialog() {
-  const portal = state.customerPortal;
-  if (portal.token) {
-    const businesses = portal.businesses.map(business => `${escapeHtml(business.customer_name)} · ${escapeHtml(business.business_name)}`).join(", ");
-    const rows = portal.invoices.map(invoice => `
-      <tr>
-        <td><div class="primary-cell"><strong>${escapeHtml(invoice.number)}</strong><small>${escapeHtml(invoice.business_name)}</small></div></td>
-        <td>${escapeHtml(invoice.status)}</td>
-        <td>${money(Number(invoice.total_cents || 0) / 100)}</td>
-        <td>${money(Number(invoice.paid_cents || 0) / 100)}</td>
-        <td>${escapeHtml(fmtDate(invoice.due_date || ""))}</td>
-      </tr>
-    `).join("");
-    $("#setup-content").innerHTML = `
-      <div class="setup-form-shell customer-portal-shell">
-        <div class="setup-form-body">
-          <div class="dialog-header"><div><h2 id="setup-title">Customer portal</h2><p>Signed in as ${escapeHtml(portal.user.name)} · ${escapeHtml(portal.user.email)}</p></div><button type="button" class="icon-button" data-action="close-setup" aria-label="Close customer portal">${icon("close")}</button></div>
-          <p class="portal-businesses">${businesses || "No linked business workspaces."}</p>
-          ${rows ? `<div class="table-wrap customer-portal-table"><table><thead><tr><th>Invoice</th><th>Status</th><th>Total</th><th>Paid</th><th>Due</th></tr></thead><tbody>${rows}</tbody></table></div>` : `<div class="empty-state"><strong>No customer invoices yet</strong><p>Invoices shared by your linked businesses will appear here.</p></div>`}
-          <div class="dialog-footer setup-footer"><button type="button" class="button button-secondary" data-action="customer-portal-sign-out">Sign out</button><button type="button" class="button button-primary" data-action="close-setup">Close</button></div>
-        </div>
-      </div>`;
-    return;
-  }
-
-  const registering = portal.mode === "register";
-  $("#setup-content").innerHTML = `
-    <div class="setup-form-shell customer-portal-shell">
-      <div class="setup-form-body">
-        <form id="customer-portal-form" class="setup-form" data-mode="${portal.mode}">
-          <div class="dialog-header"><div><h2 id="setup-title">${registering ? "Create customer account" : "Customer sign in"}</h2><p>Access invoices for a customer record approved by its workspace owner.</p></div><button type="button" class="icon-button" data-action="close-setup" aria-label="Close customer sign in">${icon("close")}</button></div>
-          <div class="setup-grid">
-            ${registering ? `<div class="form-field full"><label for="customer-portal-name">Full name</label><input class="form-control" id="customer-portal-name" name="name" autocomplete="name" required minlength="2"></div>` : ""}
-            <div class="form-field full"><label for="customer-portal-email">Email</label><input class="form-control" id="customer-portal-email" name="email" type="email" autocomplete="email" required></div>
-            <div class="form-field full"><label for="customer-portal-password">Password</label><input class="form-control" id="customer-portal-password" name="password" type="password" autocomplete="${registering ? "new-password" : "current-password"}" minlength="8" required></div>
-          </div>
-          <p class="portal-message" role="status">${escapeHtml(portal.message)}</p>
-          <div class="dialog-footer setup-footer"><button type="button" class="button button-secondary" data-action="${registering ? "customer-portal-login" : "customer-portal-register"}">${registering ? "I already have an account" : "Create customer account"}</button><button type="submit" class="button button-primary">${registering ? "Register" : "Sign in"}</button></div>
-        </form>
-      </div>
-      <aside class="setup-summary"><div class="summary-card"><p class="summary-label">Account approval</p><strong>Private by default</strong><ul><li>Use the email saved on your customer record.</li><li>A workspace owner must approve the match before access is granted.</li><li>You can only view invoices belonging to approved customer records.</li></ul></div></aside>
-    </div>`;
-}
-
-function openCustomerPortalDialog() {
-  state.customerPortal = { token: "", user: null, businesses: [], invoices: [], mode: "login", message: "" };
-  renderCustomerPortalDialog();
   $("#setup-dialog").showModal();
 }
 
@@ -815,25 +749,6 @@ function renderReports() {
     </div><div style="margin-top:13px"><button class="button button-secondary" data-action="export" data-type="summary">${icon("download")} Export financial summary</button></div>`;
 }
 
-function renderCustomerAccessRequests() {
-  const rows = state.customerAccessRequests.map(account => `
-    <article class="customer-access-request" data-account-id="${escapeHtml(account.id)}">
-      <div><strong>${escapeHtml(account.name)}</strong><small>${escapeHtml(account.email)}</small></div>
-      <div class="customer-access-controls">
-        <select class="form-control" aria-label="Select matching customer record">
-          <option value="">Select matching customer record</option>
-          ${(account.customer_candidates || []).map(customer => `<option value="${escapeHtml(customer.id)}">${escapeHtml(customer.name)}</option>`).join("")}
-        </select>
-        <button class="button button-primary" type="button" data-action="approve-customer-access" data-id="${escapeHtml(account.id)}">Approve</button>
-      </div>
-    </article>
-  `).join("");
-  return `<section class="settings-card customer-access-card">
-    <div class="panel-header"><div><h2>Customer portal access</h2><p class="panel-subtitle">Review accounts that match customer emails in this workspace.</p></div><button class="button button-secondary" type="button" data-action="refresh-customer-access">Refresh</button></div>
-    ${rows || `<p class="customer-access-empty">No customer accounts are waiting for approval.</p>`}
-  </section>`;
-}
-
 function renderTax() {
   const rate = Number(state.taxRate) || 0, amount = Math.max(0, Number(state.taxAmount) || 0);
   const tax = state.taxMode === "inclusive" ? amount * rate / (100 + rate) : amount * rate / 100;
@@ -879,7 +794,7 @@ function renderSettings() {
         <h3>Current permissions</h3>
         ${permissionsMarkup}
       </div>
-    </aside></div>${state.canManageCustomerAccess ? renderCustomerAccessRequests() : ""}`;
+    </aside></div>`;
 }
 
 async function refreshBackendStatus() {
@@ -1217,19 +1132,13 @@ document.addEventListener("click", event => {
     if (name === "share") { const record = findRecord("invoice", id); if (record) shareInvoice(record); }
     if (name === "review-setup") { openSetupWizard(); return; }
     if (name === "open-member-manager") { openMemberManager(); return; }
-    if (name === "open-auth-modal") { openAuthDialog(); return; }
-    if (name === "customer-portal-open") { openCustomerPortalDialog(); return; }
-    if (name === "customer-portal-register" || name === "customer-portal-login") {
-      state.customerPortal.mode = name === "customer-portal-register" ? "register" : "login";
-      state.customerPortal.message = "";
-      renderCustomerPortalDialog();
+    if (name === "open-auth-modal") {
+      $("#workspace-menu").classList.add("hidden");
+      openAuthDialog();
       return;
     }
-    if (name === "customer-portal-sign-out") {
-      state.customerPortal = { token: "", user: null, businesses: [], invoices: [], mode: "login", message: "You have signed out." };
-      renderCustomerPortalDialog();
-      return;
-    }
+    if (name === "auth-switch-login") { openAuthDialog("login", $("#auth-email")?.value || ""); return; }
+    if (name === "auth-switch-register") { openAuthDialog("register", $("#auth-email")?.value || ""); return; }
     if (name === "sign-out") {
       state.auth = { token: "", user: null, workspaceId: "", mode: "backend" };
       state.currentWorkspaceId = "";
@@ -1238,45 +1147,11 @@ document.addEventListener("click", event => {
       state.customers = [];
       state.inventory = [];
       state.members = [];
-      state.customerAccessRequests = [];
-      state.canManageCustomerAccess = false;
       state.businessName = "TENDO workspace";
       persistAuth(null);
       updateAccountDisplay();
       showToast("Signed out.");
       navigate("overview");
-      return;
-    }
-    if (name === "approve-customer-access") {
-      const request = action.closest(".customer-access-request");
-      const customerId = request?.querySelector("select")?.value;
-      if (!customerId) return showToast("Select the matching customer record first.", "error");
-      (async () => {
-        try {
-          await apiRequest(`/api/workspaces/${state.currentWorkspaceId}/customer-portal-requests/${encodeURIComponent(id)}/approve`, {
-            method: "POST",
-            body: { customer_id: customerId },
-          });
-          const response = await apiRequest(`/api/workspaces/${state.currentWorkspaceId}/customer-portal-requests`);
-          state.customerAccessRequests = response.accounts || [];
-          $("#page-content").innerHTML = renderSettings();
-          showToast("Customer portal access approved.");
-        } catch (error) {
-          showToast(error.message || "Unable to approve customer access.", "error");
-        }
-      })();
-      return;
-    }
-    if (name === "refresh-customer-access") {
-      (async () => {
-        try {
-          const response = await apiRequest(`/api/workspaces/${state.currentWorkspaceId}/customer-portal-requests`);
-          state.customerAccessRequests = response.accounts || [];
-          $("#page-content").innerHTML = renderSettings();
-        } catch (error) {
-          showToast(error.message || "Unable to refresh customer requests.", "error");
-        }
-      })();
       return;
     }
     if (name === "sync-backend") { refreshBackendStatus(); return; }
@@ -1336,18 +1211,30 @@ document.addEventListener("click", event => {
   }
   if (event.target.closest("#workspace-switcher")) {
     const menu = $("#workspace-menu");
+    menu.innerHTML = renderWorkspaceMenu();
     menu.classList.toggle("hidden");
+    return;
+  }
+  if (event.target.closest("[data-team-account]")) {
+    const email = event.target.closest("[data-team-account]").dataset.teamAccount;
+    $("#workspace-menu").classList.add("hidden");
+    openAuthDialog("login", email);
     return;
   }
   if (event.target.closest("[data-workspace-id]")) {
     const workspaceId = event.target.closest("[data-workspace-id]").dataset.workspaceId;
     if (workspaceId) {
       state.currentWorkspaceId = workspaceId;
+      state.auth.workspaceId = workspaceId;
+      persistAuth(state.auth);
       syncCurrentWorkspace();
       $("#workspace-menu").classList.add("hidden");
       $("#workspace-name").textContent = state.businessName;
-      showToast(`Switched to ${state.businessName}.`);
-      navigate(state.page);
+      (async () => {
+        await loadWorkspaceData();
+        navigate(state.page);
+        showToast(`Switched to ${state.businessName}.`);
+      })();
     }
     return;
   }
@@ -1432,85 +1319,43 @@ document.addEventListener("submit", event => {
     const email = String(formData.email || "").trim();
     const password = String(formData.password || "");
     const name = String(formData.name || "").trim();
-    if (!email || !password || password.length < 8) {
-      return showToast("Enter a valid email and password with at least 8 characters.", "error");
+    const registering = state.authPromptMode === "register";
+    if (!email || password.length < 8 || (registering && name.length < 2)) {
+      return showToast(registering
+        ? "Enter your name, a valid email, and a password with at least 8 characters."
+        : "Enter a valid team account email and password with at least 8 characters.", "error");
     }
     (async () => {
       try {
-        const endpoint = name ? "/api/auth/register" : "/api/auth/login";
-        const payload = name ? { name, email, password } : { email, password };
+        const endpoint = registering ? "/api/auth/register" : "/api/auth/login";
+        const payload = registering ? { name, email, password } : { email, password };
         const response = await apiRequest(endpoint, { method: "POST", body: payload });
-        state.auth = { token: response.token, user: response.user, workspaceId: response.workspaceId || state.currentWorkspaceId || "", mode: "backend" };
+        state.auth = { token: response.token, user: response.user, workspaceId: response.workspaceId || "", mode: "backend" };
         persistAuth(state.auth);
+        state.records = [];
+        state.customers = [];
+        state.inventory = [];
+        state.members = [];
         updateAccountDisplay();
-        state.currentWorkspaceId = state.auth.workspaceId || state.currentWorkspaceId;
-        if (response.workspaceId) {
-          state.workspaces = [...state.workspaces.filter(workspace => workspace.id !== response.workspaceId), { id: response.workspaceId, name: `${response.user.name}'s workspace`, type: "Business", profile: { businessType: "Business", businessEmail: "", businessPhone: "", location: "", address: "", taxConfig: "", registration: "" } }];
-        }
-        state.businessName = response.user.name + " workspace";
+        state.currentWorkspaceId = response.workspaceId || "";
+        state.workspaces = [];
         $("#setup-dialog").close();
         await loadWorkspaceData();
         showToast("Connected to TENDO backend.");
         navigate("overview");
       } catch (error) {
-        showToast(error.message || "Unable to sign in right now.", "error");
-      }
-    })();
-  }
-  if (event.target.id === "customer-portal-form") {
-    event.preventDefault();
-    const form = event.target;
-    const formData = Object.fromEntries(new FormData(form).entries());
-    const email = String(formData.email || "").trim();
-    const password = String(formData.password || "");
-    const registering = form.dataset.mode === "register";
-    if (!email || password.length < 8 || (registering && String(formData.name || "").trim().length < 2)) {
-      state.customerPortal.message = registering
-        ? "Enter your name, valid email, and a password with at least 8 characters."
-        : "Enter a valid email and password with at least 8 characters.";
-      renderCustomerPortalDialog();
-      return;
-    }
-    (async () => {
-      try {
-        if (registering) {
-          const response = await customerPortalRequest("/api/customer-portal/register", "", {
-            method: "POST",
-            body: { name: String(formData.name).trim(), email, password },
-          });
-          state.customerPortal = {
-            token: "",
-            user: null,
-            businesses: [],
-            invoices: [],
-            mode: "login",
-            message: response.message || "Registration submitted. A workspace owner must approve your account.",
-          };
-          renderCustomerPortalDialog();
-          return;
+        if (!state.auth.token) {
+          state.currentWorkspaceId = "";
+          state.workspaces = [];
+          state.records = [];
+          state.customers = [];
+          state.inventory = [];
+          state.members = [];
+          state.businessName = "TENDO workspace";
+          updateAccountDisplay();
+          navigate("overview");
         }
-
-        const response = await customerPortalRequest("/api/customer-portal/login", "", {
-          method: "POST",
-          body: { email, password },
-        });
-        const [profile, invoiceResponse] = await Promise.all([
-          customerPortalRequest("/api/customer-portal/profile", response.token),
-          customerPortalRequest("/api/customer-portal/invoices", response.token),
-        ]);
-        state.customerPortal = {
-          token: response.token,
-          user: response.user,
-          businesses: profile.businesses || [],
-          invoices: invoiceResponse.invoices || [],
-          mode: "login",
-          message: "",
-        };
-        renderCustomerPortalDialog();
-      } catch (error) {
-        state.customerPortal.token = "";
-        state.customerPortal.message = error.message || "Unable to sign in right now.";
-        renderCustomerPortalDialog();
+        showToast(error.message || "Unable to sign in right now.", "error");
       }
     })();
   }
